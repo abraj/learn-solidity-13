@@ -6,7 +6,9 @@
   "type": "module",
   "license": "MIT",
   "scripts": {
-    "dev": "node src/index.js"
+    "dev": "npm run libp2p --silent",
+    "libp2p": "tsx src/index.ts",
+    "libp2p:bkp": "node --loader ts-node/esm src/index.ts"
   },
   "dependencies": {
     "@chainsafe/libp2p-noise": "^16.0.0",
@@ -15,5 +17,10 @@
     "@libp2p/tcp": "^10.0.9",
     "libp2p": "^2.1.9",
     "multiaddr": "^10.0.1"
+  },
+  "devDependencies": {
+    "ts-node": "^10.9.2",
+    "tsx": "^4.19.1",
+    "typescript": "^5.6.3"
   }
 }

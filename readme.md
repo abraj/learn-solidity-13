@@ -4,10 +4,10 @@
 
 ```bash
 # first node
-node src/index.js
+npx tsx src/index.ts
 
 # second node
-node src/index.js /ip4/127.0.0.1/tcp/64139/p2p/first-node-multiaddr..
+npx tsx src/index.ts /ip4/127.0.0.1/tcp/64139/p2p/first-node-multiaddr..
 ```
 
 ### Docs
