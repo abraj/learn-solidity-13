@@ -1,4 +1,4 @@
-import { keys } from '@libp2p/crypto';
+import { generateKeyPair, privateKeyFromRaw } from '@libp2p/crypto/keys';
 
 function toHexString(uint8Array: Uint8Array): string {
   return Array.from(uint8Array)
@@ -23,14 +23,14 @@ function toUint8Array(hexString: string): Uint8Array {
 // ----------------------
 
 export async function generatePrivateKey() {
-  const privateKey = await keys.generateKeyPair('Ed25519');
+  const privateKey = await generateKeyPair('Ed25519');
   const privateKeyStr = toHexString(privateKey.raw);
   return privateKeyStr;
 }
 
 export function getPrivateKey(privateKeyHexStr: string) {
   const privateKeyRaw = toUint8Array(privateKeyHexStr);
-  const privateKey = keys.privateKeyFromRaw(privateKeyRaw);
+  const privateKey = privateKeyFromRaw(privateKeyRaw);
   return privateKey;
 }
 
