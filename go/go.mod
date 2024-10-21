@@ -1,4 +1,4 @@
-module learn-solidity/lib/13/libp2p-demo
+module libp2pdemo
 
 go 1.23.2
 
