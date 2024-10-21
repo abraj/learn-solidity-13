@@ -8,6 +8,7 @@ import (
 	"syscall"
 
 	"github.com/libp2p/go-libp2p"
+	"github.com/libp2p/go-libp2p/core/host"
 	peerstore "github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/p2p/protocol/ping"
 	multiaddr "github.com/multiformats/go-multiaddr"
@@ -29,11 +30,13 @@ func main() {
 	// fmt.Println("Listen addresses:", node.Addrs())
 
 	// print the node's PeerInfo in multiaddr format
-	peerInfo := peerstore.AddrInfo{
-		ID:    node.ID(),
-		Addrs: node.Addrs(),
-	}
-	addrs, err := peerstore.AddrInfoToP2pAddrs(&peerInfo)
+	peerInfo := host.InfoFromHost(node)
+	addrs, err := peerstore.AddrInfoToP2pAddrs(peerInfo)
+	// peerInfo := peerstore.AddrInfo{
+	// 	ID:    node.ID(),
+	// 	Addrs: node.Addrs(),
+	// }
+	// addrs, err := peerstore.AddrInfoToP2pAddrs(&peerInfo)
 	if err != nil {
 		panic(err)
 	}
