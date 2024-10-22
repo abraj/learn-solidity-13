@@ -16,15 +16,17 @@ import (
 	multiaddr "github.com/multiformats/go-multiaddr"
 )
 
-func Node3(targetAddrStr string) {
+func Node3() {
 	privateKeyStr := "307702010104205838f732713b7c8ab9e981458bba18d1736d5cfc37801d65e04b96dea5dae9a6a00a06082a8648ce3d030107a14403420004fbf030abd86aa51fd0d39b07521545896afd442f11342b2d467db791b477f97f4ad0da239d9c73fee1048a9608c6166c41b27af2d397f5368efa141226a31a97"
 	privKey := utils.HexToPrivKey(privateKeyStr)
 	privateKey := utils.ConvertECDSAKeyToLibp2p(privKey)
 
+	targetAddrStr := "/ip4/127.0.0.1/tcp/8002/p2p/QmXfjanvuRK2sGZDrKa388ZNHak5DNhkT1Pzibf4YLu5FR"
+
 	// start a libp2p node
 	node, err := libp2p.New(
 		libp2p.Identity(privateKey),
-		libp2p.ListenAddrStrings("/ip4/0.0.0.0/tcp/0"),
+		libp2p.ListenAddrStrings("/ip4/0.0.0.0/tcp/8003"),
 	)
 	if err != nil {
 		panic(err)
