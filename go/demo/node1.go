@@ -11,7 +11,7 @@ import (
 	"github.com/libp2p/go-libp2p"
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/network"
-	peerstore "github.com/libp2p/go-libp2p/core/peer"
+	peer "github.com/libp2p/go-libp2p/core/peer"
 )
 
 func Node1() {
@@ -33,7 +33,7 @@ func Node1() {
 
 	// print the node's PeerInfo in multiaddr format
 	peerInfo := host.InfoFromHost(node)
-	addrs, err := peerstore.AddrInfoToP2pAddrs(peerInfo)
+	addrs, err := peer.AddrInfoToP2pAddrs(peerInfo)
 	if err != nil {
 		panic(err)
 	}
@@ -53,10 +53,11 @@ func Node1() {
 	})
 
 	timer := utils.SetInterval(func() {
+		// peersList := node.Peerstore().Peers()
 		peersList := node.Network().Peers()
 		fmt.Printf("Number of peers: %d\n", len(peersList))
-		for _, peer := range peersList {
-			fmt.Println("", peer)
+		for _, peerId := range peersList {
+			fmt.Println("", peerId)
 		}
 	}, 8*time.Second)
 
