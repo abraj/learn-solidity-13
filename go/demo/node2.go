@@ -21,16 +21,19 @@ func Node2() {
 	privKey := utils.HexToPrivKey(privateKeyStr)
 	privateKey := utils.ConvertECDSAKeyToLibp2p(privKey)
 
-	targetAddrStr := "/ip4/127.0.0.1/tcp/8001/p2p/QmaT8zFZp8mKg6dAqxp4wNc7P9dn2WK6imPA37yG8zWwpq"
+	// targetAddrStr := "/ip4/127.0.0.1/tcp/8001/p2p/QmaT8zFZp8mKg6dAqxp4wNc7P9dn2WK6imPA37yG8zWwpq"
+	targetAddrStr := "/ip4/172.232.108.85/tcp/8001/p2p/QmaT8zFZp8mKg6dAqxp4wNc7P9dn2WK6imPA37yG8zWwpq"
 
 	// start a libp2p node
 	node, err := libp2p.New(
 		libp2p.Identity(privateKey),
-		libp2p.ListenAddrStrings("/ip4/0.0.0.0/tcp/8002"),
+		// libp2p.ListenAddrStrings("/ip4/0.0.0.0/tcp/8002"),
+		libp2p.ListenAddrStrings("/ip4/172.235.29.4/tcp/8002"),
 	)
 	if err != nil {
 		panic(err)
 	}
+	// fmt.Println("protocols:", node.Mux().Protocols())
 
 	// print the node's PeerInfo in multiaddr format
 	peerInfo := host.InfoFromHost(node)
