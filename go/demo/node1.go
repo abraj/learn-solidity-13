@@ -1,17 +1,21 @@
 package demo
 
 import (
+	"context"
 	"fmt"
 	"libp2pdemo/utils"
+	"log"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
 	"github.com/libp2p/go-libp2p"
+	dht "github.com/libp2p/go-libp2p-kad-dht"
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/network"
 	peer "github.com/libp2p/go-libp2p/core/peer"
+	multiaddr "github.com/multiformats/go-multiaddr"
 )
 
 func Node1() {
@@ -19,17 +23,53 @@ func Node1() {
 	privKey := utils.HexToPrivKey(privateKeyStr)
 	privateKey := utils.ConvertECDSAKeyToLibp2p(privKey)
 
+	bootstrapPeerAddrs := []string{
+		// addresses of "other" bootstrap peers
+	}
+
+	ctx := context.Background()
+
+	// ------------------
+
 	// start a libp2p node
 	node, err := libp2p.New(
 		libp2p.Identity(privateKey),
 		// libp2p.ListenAddrStrings("/ip4/0.0.0.0/tcp/0"),
-		// libp2p.ListenAddrStrings("/ip4/0.0.0.0/tcp/8001"),
-		libp2p.ListenAddrStrings("/ip4/172.232.108.85/tcp/8001"),
+		libp2p.ListenAddrStrings("/ip4/0.0.0.0/tcp/8001"),
+		// libp2p.ListenAddrStrings("/ip4/172.232.108.85/tcp/8001"),
 	)
 	if err != nil {
 		panic(err)
 	}
-	// fmt.Println("protocols:", node.Mux().Protocols())
+
+	// create bootstrap peer nodes' addrInfo using their string addresses
+	var bootstrapPeers []peer.AddrInfo
+	for _, addrStr := range bootstrapPeerAddrs {
+		maddr, err := multiaddr.NewMultiaddr(addrStr)
+		if err != nil {
+			panic(err)
+		}
+		addrInfo, err := peer.AddrInfoFromP2pAddr(maddr)
+		if err != nil {
+			panic(err)
+		}
+		bootstrapPeers = append(bootstrapPeers, *addrInfo)
+	}
+
+	// create a new instance of DHT service
+	dhtOpts := []dht.Option{
+		dht.ProtocolPrefix("/baadal"),         // Custom DHT namespace
+		dht.Mode(dht.ModeServer),              // Full DHT (server mode)
+		dht.BootstrapPeers(bootstrapPeers...), // automatically set up the bootstrap peers
+	}
+	kadDHT, err := dht.New(ctx, node, dhtOpts...)
+	if err != nil {
+		log.Fatalf("Failed to create DHT: %v", err)
+	}
+
+	fmt.Println("protocols:", node.Mux().Protocols())
+
+	// ------------------
 
 	// print the node's PeerInfo in multiaddr format
 	peerInfo := host.InfoFromHost(node)
@@ -40,6 +80,14 @@ func Node1() {
 	fmt.Println("libp2p node address:")
 	for i := 0; i < len(addrs); i++ {
 		fmt.Println("", addrs[i])
+	}
+
+	if len(os.Args) == 1 {
+		err := &utils.CustomError{
+			Message: "No args provided!",
+			Code:    500,
+		}
+		panic(err)
 	}
 
 	// Listen for peer connection events
@@ -60,6 +108,36 @@ func Node1() {
 			fmt.Println("", peerId)
 		}
 	}, 8*time.Second)
+
+	// ------------------
+
+	// // Connect to each bootstrap peer manually
+	// // NOTE: Not needed if `dht.BootstrapPeers` option is configured during DHT initialization
+	// for _, addrInfo := range bootstrapPeers {
+	// 	// add target node address to peerstore as permanent address (bootstrap node)
+	// 	node.Peerstore().AddAddrs(addrInfo.ID, addrInfo.Addrs, peerstore.PermanentAddrTTL)
+
+	// 	// targetAddrInfo := addrInfo
+	// 	targetAddrInfo := node.Peerstore().PeerInfo(addrInfo.ID)
+
+	// 	// dial (target) peer node address
+	// 	if err := node.Connect(ctx, targetAddrInfo); err != nil {
+	// 		panic(err)
+	// 	}
+	// }
+
+	// bootstrap the DHT instance
+	// NOTE: will automatically connect to bootstrap peers if `dht.BootstrapPeers` option is configured during DHT initialization
+	// NOTE: otherwise, call 'after' the node has connected to the configured bootstrap peers
+	if err := kadDHT.Bootstrap(ctx); err != nil {
+		log.Fatalf("Failed to bootstrap DHT: %v", err)
+	}
+
+	// ------------------
+
+	// ..
+
+	// ------------------
 
 	// wait for a SIGINT or SIGTERM signal
 	ch := make(chan os.Signal, 1)
