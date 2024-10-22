@@ -13,6 +13,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/network"
 	peer "github.com/libp2p/go-libp2p/core/peer"
+	peerstore "github.com/libp2p/go-libp2p/core/peerstore"
 	multiaddr "github.com/multiformats/go-multiaddr"
 )
 
@@ -85,8 +86,14 @@ func Node2() {
 	go func() {
 		time.Sleep(11 * time.Second)
 
+		// add target node address to peerstore as permanent address (bootstrap node)
+		node.Peerstore().AddAddrs(targetAddrInfo.ID, targetAddrInfo.Addrs, peerstore.PermanentAddrTTL)
+
+		// addrInfo := *targetAddrInfo
+		addrInfo := node.Peerstore().PeerInfo(targetAddrInfo.ID)
+
 		// dial target node address
-		if err := node.Connect(context.Background(), *targetAddrInfo); err != nil {
+		if err := node.Connect(context.Background(), addrInfo); err != nil {
 			panic(err)
 		}
 	}()
