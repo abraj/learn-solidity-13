@@ -16,17 +16,6 @@ import (
 	multiaddr "github.com/multiformats/go-multiaddr"
 )
 
-// CustomError defines a new error type
-type CustomError struct {
-	Message string
-	Code    int
-}
-
-// Error method satisfies the error interface
-func (e *CustomError) Error() string {
-	return fmt.Sprintf("Error %d: %s", e.Code, e.Message)
-}
-
 func Node2(targetAddrStr string) {
 	privateKeyStr := "3077020101042025d12858318183eb454b12cff1e99cc1544168e59298161003018601f2f48ae7a00a06082a8648ce3d030107a144034200046678e783977224c45a46ba565f840b70a78cbf7854e9d13625c670ffa7a06804ae605ee09b02ab6632c8425e34d1f998e6baf288d07e2de91e512bad35eadd88"
 	privKey := utils.HexToPrivKey(privateKeyStr)
@@ -53,7 +42,7 @@ func Node2(targetAddrStr string) {
 	}
 
 	if len(os.Args) == 1 {
-		err := &CustomError{
+		err := &utils.CustomError{
 			Message: "No args provided!",
 			Code:    500,
 		}
