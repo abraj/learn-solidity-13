@@ -3,6 +3,8 @@ package demo
 import (
 	"context"
 	"fmt"
+	"libp2pdemo/baadal/client"
+	"libp2pdemo/baadal/request"
 	"libp2pdemo/utils"
 	"log"
 	"os"
@@ -142,7 +144,28 @@ func Node2() {
 
 	// ------------------
 
-	// ..
+	go func() {
+		time.Sleep(10 * time.Second)
+
+		peerID, err := peer.Decode("QmaT8zFZp8mKg6dAqxp4wNc7P9dn2WK6imPA37yG8zWwpq")
+		if err != nil {
+			panic(err)
+		}
+
+		protocolID := client.ProtocolID()
+
+		resp := request.RequestService(node, peerID, protocolID, "clientinfo")
+		fmt.Println("--------------")
+		fmt.Println("resp:", resp)
+		m := utils.ResponseMap(resp)
+		fmt.Println("map:", m)
+		if m != nil && m["network_name"] == "baadal" && len(m["client_version"]) > 0 {
+			fmt.Println(">>", peerID, "Valid")
+		} else {
+			fmt.Println(">>", peerID, "Invalid")
+		}
+		fmt.Println("--------------")
+	}()
 
 	// ------------------
 

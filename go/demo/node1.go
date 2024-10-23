@@ -3,6 +3,7 @@ package demo
 import (
 	"context"
 	"fmt"
+	"libp2pdemo/baadal/client"
 	"libp2pdemo/utils"
 	"log"
 	"os"
@@ -66,6 +67,9 @@ func Node1() {
 	if err != nil {
 		log.Fatalf("Failed to create DHT: %v", err)
 	}
+
+	clientService := client.NewClientService()
+	node.SetStreamHandler(client.ID, clientService.StreamHandler)
 
 	fmt.Println("protocols:", node.Mux().Protocols())
 

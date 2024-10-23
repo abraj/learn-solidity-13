@@ -136,7 +136,7 @@ func Node3() {
 	// ------------------
 
 	go func() {
-		time.Sleep(18 * time.Second)
+		time.Sleep(10 * time.Second)
 
 		peerID, err := peer.Decode("QmaT8zFZp8mKg6dAqxp4wNc7P9dn2WK6imPA37yG8zWwpq")
 		// peerID, err := peer.Decode("QmXfjanvuRK2sGZDrKa388ZNHak5DNhkT1Pzibf4YLu5FR")
