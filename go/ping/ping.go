@@ -70,6 +70,9 @@ func Start() {
 			fmt.Println("ping response!", "RTT:", res.RTT)
 		}
 	} else {
+		// // Keep the program running to listen for connections
+		// select {}
+
 		// wait for a SIGINT or SIGTERM signal
 		ch := make(chan os.Signal, 1)
 		signal.Notify(ch, syscall.SIGINT, syscall.SIGTERM)
