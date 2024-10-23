@@ -9,7 +9,7 @@ import (
 
 	"github.com/libp2p/go-libp2p"
 	"github.com/libp2p/go-libp2p/core/host"
-	peerstore "github.com/libp2p/go-libp2p/core/peer"
+	peer "github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/p2p/protocol/ping"
 	multiaddr "github.com/multiformats/go-multiaddr"
 )
@@ -31,12 +31,12 @@ func Start() {
 
 	// print the node's PeerInfo in multiaddr format
 	peerInfo := host.InfoFromHost(node)
-	addrs, err := peerstore.AddrInfoToP2pAddrs(peerInfo)
-	// peerInfo := peerstore.AddrInfo{
+	addrs, err := peer.AddrInfoToP2pAddrs(peerInfo)
+	// peerInfo := peer.AddrInfo{
 	// 	ID:    node.ID(),
 	// 	Addrs: node.Addrs(),
 	// }
-	// addrs, err := peerstore.AddrInfoToP2pAddrs(&peerInfo)
+	// addrs, err := peer.AddrInfoToP2pAddrs(&peerInfo)
 	if err != nil {
 		panic(err)
 	}
@@ -55,16 +55,16 @@ func Start() {
 		if err != nil {
 			panic(err)
 		}
-		peer, err := peerstore.AddrInfoFromP2pAddr(addr)
+		peerAddrInfo, err := peer.AddrInfoFromP2pAddr(addr)
 		if err != nil {
 			panic(err)
 		}
-		if err := node.Connect(context.Background(), *peer); err != nil {
+		if err := node.Connect(context.Background(), *peerAddrInfo); err != nil {
 			panic(err)
 		}
 
 		fmt.Println("sending 5 ping messages to", addr)
-		ch := pingService.Ping(context.Background(), peer.ID)
+		ch := pingService.Ping(context.Background(), peerAddrInfo.ID)
 		for i := 0; i < 5; i++ {
 			res := <-ch
 			fmt.Println("ping response!", "RTT:", res.RTT)

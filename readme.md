@@ -12,19 +12,36 @@ npx tsx index.ts
 npx tsx index.ts /ip4/127.0.0.1/tcp/64139/p2p/first-node-multiaddr..
 ```
 
-### How to run (go)
+### How to run (`go/ping`, `go/dial`)
+
+```bash
+# update import in `main.go`
+cd go
+
+# first node
+go run main.go
+
+# second node
+go run main.go /ip4/127.0.0.1/tcp/64139/p2p/first-node-multiaddr..
+```
+
+### How to run (`go/demo`)
 
 ```bash
 cd go
 go build -o libp2p-node
 
 # first node
-# go run main.go
-./libp2p-node
+# go run main.go 1
+./libp2p-node 1
 
 # second node
-# go run main.go /ip4/127.0.0.1/tcp/64139/p2p/first-node-multiaddr..
-./libp2p-node /ip4/127.0.0.1/tcp/64139/p2p/first-node-multiaddr..
+# go run main.go 2
+./libp2p-node 2
+
+# third node
+# go run main.go 3
+./libp2p-node 3
 ```
 
 ### Docs

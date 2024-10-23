@@ -5,5 +5,7 @@ package main
 import "libp2pdemo/demo"
 
 func main() {
+	// ping.Start()
+	// dial.Start()
 	demo.Start()
 }

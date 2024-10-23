@@ -7,7 +7,7 @@ import (
 
 	"github.com/libp2p/go-libp2p"
 	"github.com/libp2p/go-libp2p/core/host"
-	peerstore "github.com/libp2p/go-libp2p/core/peer"
+	peer "github.com/libp2p/go-libp2p/core/peer"
 	multiaddr "github.com/multiformats/go-multiaddr"
 )
 
@@ -33,7 +33,7 @@ func Node2(targetAddrStr string) {
 
 	// print the node's PeerInfo in multiaddr format
 	peerInfo := host.InfoFromHost(node)
-	addrs, err := peerstore.AddrInfoToP2pAddrs(peerInfo)
+	addrs, err := peer.AddrInfoToP2pAddrs(peerInfo)
 	if err != nil {
 		panic(err)
 	}
@@ -54,7 +54,7 @@ func Node2(targetAddrStr string) {
 	if err != nil {
 		panic(err)
 	}
-	targetAddrInfo, err := peerstore.AddrInfoFromP2pAddr(targetAddr)
+	targetAddrInfo, err := peer.AddrInfoFromP2pAddr(targetAddr)
 	if err != nil {
 		panic(err)
 	}
