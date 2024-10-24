@@ -3,6 +3,7 @@ package demo
 import (
 	"context"
 	"fmt"
+	"libp2pdemo/baadal/client"
 	"libp2pdemo/utils"
 	"log"
 	"os"
@@ -67,6 +68,9 @@ func Node3() {
 		log.Fatalf("Failed to create DHT: %v", err)
 	}
 
+	clientService := client.NewClientService()
+	node.SetStreamHandler(client.ID, clientService.StreamHandler)
+
 	fmt.Println("protocols:", node.Mux().Protocols())
 
 	// ------------------
@@ -93,7 +97,11 @@ func Node3() {
 	// Listen for peer connection events
 	node.Network().Notify(&network.NotifyBundle{
 		ConnectedF: func(n network.Network, conn network.Conn) {
-			fmt.Printf("Connected to %s\n", conn.RemotePeer())
+			peerID := conn.RemotePeer()
+			fmt.Printf("Connected to %s\n", peerID)
+			go func() {
+				onConnected(node, peerID)
+			}()
 		},
 		DisconnectedF: func(n network.Network, conn network.Conn) {
 			fmt.Printf("Disconnected from %s\n", conn.RemotePeer())

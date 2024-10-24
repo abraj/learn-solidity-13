@@ -97,7 +97,11 @@ func Node1() {
 	// Listen for peer connection events
 	node.Network().Notify(&network.NotifyBundle{
 		ConnectedF: func(n network.Network, conn network.Conn) {
-			fmt.Printf("Connected to %s\n", conn.RemotePeer())
+			peerID := conn.RemotePeer()
+			fmt.Printf("Connected to %s\n", peerID)
+			go func() {
+				onConnected(node, peerID)
+			}()
 		},
 		DisconnectedF: func(n network.Network, conn network.Conn) {
 			fmt.Printf("Disconnected from %s\n", conn.RemotePeer())
