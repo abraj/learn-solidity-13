@@ -106,6 +106,8 @@ func Node2() {
 		ConnectedF: func(n network.Network, conn network.Conn) {
 			peerID := conn.RemotePeer()
 			fmt.Printf("Connected to %s\n", peerID)
+
+			// "never block the callback"
 			go func() {
 				onConnected(node, peerID)
 			}()

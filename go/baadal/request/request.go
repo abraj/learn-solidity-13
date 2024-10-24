@@ -49,6 +49,7 @@ func RequestService(node host.Host, peerID peer.ID, protocolID protocol.ID, mess
 
 	resp := ""
 
+	// NOTE: blocked here until resp channel is resolved or ctx is timed out
 	select {
 	case resp = <-respCh:
 		// response available on channel
