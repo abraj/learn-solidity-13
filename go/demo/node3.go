@@ -26,8 +26,8 @@ func Node3() {
 	// privateKey := utils.DecodeEd25519PrivateKey(privateKeyStr)
 
 	bootstrapPeerAddrs := []string{
-		"/ip4/127.0.0.1/tcp/8002/p2p/QmXfjanvuRK2sGZDrKa388ZNHak5DNhkT1Pzibf4YLu5FR",
-		// "/ip4/172.235.29.4/tcp/8002/p2p/QmXfjanvuRK2sGZDrKa388ZNHak5DNhkT1Pzibf4YLu5FR",
+		// "/ip4/127.0.0.1/tcp/8002/p2p/QmXfjanvuRK2sGZDrKa388ZNHak5DNhkT1Pzibf4YLu5FR",
+		"/ip4/172.235.29.4/tcp/8002/p2p/QmXfjanvuRK2sGZDrKa388ZNHak5DNhkT1Pzibf4YLu5FR",
 	}
 
 	ctx := context.Background()
@@ -37,8 +37,8 @@ func Node3() {
 	// start a libp2p node
 	node, err := libp2p.New(
 		libp2p.Identity(privateKey),
-		libp2p.ListenAddrStrings("/ip4/0.0.0.0/tcp/8003"),
-		// libp2p.ListenAddrStrings("/ip4/139.177.187.105/tcp/8003"),
+		// libp2p.ListenAddrStrings("/ip4/0.0.0.0/tcp/8003"),
+		libp2p.ListenAddrStrings("/ip4/139.177.187.105/tcp/8003"),
 	)
 	if err != nil {
 		panic(err)

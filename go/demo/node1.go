@@ -37,8 +37,8 @@ func Node1() {
 	node, err := libp2p.New(
 		libp2p.Identity(privateKey),
 		// libp2p.ListenAddrStrings("/ip4/0.0.0.0/tcp/0"),
-		libp2p.ListenAddrStrings("/ip4/0.0.0.0/tcp/8001"),
-		// libp2p.ListenAddrStrings("/ip4/172.232.108.85/tcp/8001"),
+		// libp2p.ListenAddrStrings("/ip4/0.0.0.0/tcp/8001"),
+		libp2p.ListenAddrStrings("/ip4/172.232.108.85/tcp/8001"),
 	)
 	if err != nil {
 		panic(err)
