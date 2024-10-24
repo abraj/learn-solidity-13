@@ -43,8 +43,8 @@ func (cs *ClientService) StreamHandler(s network.Stream) {
 }
 
 func handleStream(s network.Stream) error {
-	conn := s.Conn()
-	fmt.Println("Remote peer:", conn.RemotePeer().String())
+	// conn := s.Conn()
+	// fmt.Println("Remote peer:", conn.RemotePeer().String())
 
 	// Read from the stream
 	data, err := utils.ReadStream(s)
@@ -52,7 +52,7 @@ func handleStream(s network.Stream) error {
 		fmt.Print("Error reading from stream: ")
 		return err
 	}
-	fmt.Printf("Received: %s\n", data)
+	// fmt.Printf("Received: %s\n", data)
 
 	// create a response based on the request (input) data
 	resp := createResponse(data)
