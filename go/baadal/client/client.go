@@ -27,10 +27,10 @@ func NewClientService() ClientService {
 }
 
 func (cs *ClientService) StreamHandler(s network.Stream) {
-	fmt.Println("----------")
-	defer func() {
-		fmt.Println("----------")
-	}()
+	// fmt.Println("----------")
+	// defer func() {
+	// 	fmt.Println("----------")
+	// }()
 
 	err := handleStream(s)
 	if err != nil {

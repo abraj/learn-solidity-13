@@ -143,23 +143,23 @@ func Node3() {
 
 	// ------------------
 
-	go func() {
-		time.Sleep(10 * time.Second)
+	// go func() {
+	// 	time.Sleep(10 * time.Second)
 
-		peerID, err := peer.Decode("QmaT8zFZp8mKg6dAqxp4wNc7P9dn2WK6imPA37yG8zWwpq")
-		// peerID, err := peer.Decode("QmXfjanvuRK2sGZDrKa388ZNHak5DNhkT1Pzibf4YLu5FR")
-		if err != nil {
-			panic(err)
-		}
-		fmt.Println(">>>>>>>>>>>>>> peerID:", peerID)
+	// 	peerID, err := peer.Decode("QmaT8zFZp8mKg6dAqxp4wNc7P9dn2WK6imPA37yG8zWwpq")
+	// 	// peerID, err := peer.Decode("QmXfjanvuRK2sGZDrKa388ZNHak5DNhkT1Pzibf4YLu5FR")
+	// 	if err != nil {
+	// 		panic(err)
+	// 	}
+	// 	fmt.Println(">>>>>>>>>>>>>> peerID:", peerID)
 
-		// Find the peer
-		addrInfo, err := kadDHT.FindPeer(ctx, peerID)
-		if err != nil {
-			log.Fatalf("Peer not found: (%s) %v", peerID, err)
-		}
-		fmt.Println(">> peerInfo:", addrInfo)
-	}()
+	// 	// Find the peer
+	// 	addrInfo, err := kadDHT.FindPeer(ctx, peerID)
+	// 	if err != nil {
+	// 		log.Fatalf("Peer not found: (%s) %v", peerID, err)
+	// 	}
+	// 	fmt.Println(">> peerInfo:", addrInfo)
+	// }()
 
 	// ------------------
 

@@ -31,6 +31,6 @@ func evictPeer(node host.Host, peerID peer.ID) {
 	node.Peerstore().ClearAddrs(peerID)
 	node.Peerstore().RemovePeer(peerID)
 
-	time.Sleep(2 * time.Second)
+	time.Sleep(2 * time.Second) // delay to avoid race condition among nodes
 	node.Network().ClosePeer(peerID)
 }
