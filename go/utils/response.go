@@ -16,7 +16,7 @@ func ValidateResponse(respMap map[string]string, expectedArgs ...string) bool {
 			item := respMap[val]
 			cond := len(item) > 0
 			if !cond {
-				log.Printf("Expected arg (%s) not found in resp: %v", val, respMap)
+				log.Printf("Expected arg (%s) not found in resp: %v\n", val, respMap)
 				return false
 			}
 		}

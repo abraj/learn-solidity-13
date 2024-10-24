@@ -73,9 +73,9 @@ func queryTime(node host.Host, peerID peer.ID) (int64, int64) {
 	return 0, t0
 }
 
-func getNetworkTimeShift(node host.Host, validators []peer.ID) int {
+func getNetworkTimeShift(node host.Host, validators []peer.ID, initialCall bool) int {
 	if len(validators) == 0 {
-		return 0
+		log.Fatalf("[ERROR] Missing validators list: %v\n", validators)
 	}
 
 	var (
@@ -109,8 +109,10 @@ func getNetworkTimeShift(node host.Host, validators []peer.ID) int {
 			if absDiff < 0 {
 				absDiff = -absDiff
 			}
-			if absDiff > shared.SLOT_DURATION/2 {
+
+			if !initialCall && absDiff > 2*shared.MAX_CLOCK_DRIFT {
 				// filter extreme values
+				fmt.Printf("[WARN] Large time drift detected for peerID: %s\n", v.String())
 				return
 			}
 
@@ -123,7 +125,11 @@ func getNetworkTimeShift(node host.Host, validators []peer.ID) int {
 	wg.Wait() // Wait for all goroutines to finish
 
 	if len(result) == 0 {
-		return 0
+		if utils.IsValidator(node.ID(), validators) {
+			return 0
+		} else {
+			log.Fatalf("[ERROR] Unable to sync time with validator set. Please try again!\n")
+		}
 	}
 
 	timestamps := []int64{}
@@ -134,12 +140,17 @@ func getNetworkTimeShift(node host.Host, validators []peer.ID) int {
 	median := utils.Median(timestamps)
 	timeShift := int(median)
 
+	// mostly applicable for "initialCall"
+	if timeShift > shared.MAX_INITIAL_CLOCK_SYNC {
+		log.Fatalf("[ERROR] Initial time drift too large: %d\n First, sync time on your system and then retry!\n", timeShift)
+	}
+
 	return timeShift
 }
 
-func AdjustNetworkTime(node host.Host, validators []peer.ID) {
+func AdjustNetworkTime(node host.Host, validators []peer.ID, initialCall bool) {
 	go func() {
-		timeShift := getNetworkTimeShift(node, validators)
+		timeShift := getNetworkTimeShift(node, validators, initialCall)
 		shared.SetNetworkTimeShift(timeShift)
 	}()
 }

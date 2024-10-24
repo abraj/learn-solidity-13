@@ -3,6 +3,8 @@ package utils
 import (
 	"sort"
 	"time"
+
+	"github.com/libp2p/go-libp2p/core/peer"
 )
 
 func Contains(slice []string, item string) bool {
@@ -12,6 +14,16 @@ func Contains(slice []string, item string) bool {
 		}
 	}
 	return false
+}
+
+func IsValidator(peerID peer.ID, validators []peer.ID) bool {
+	includes := false
+	for _, v := range validators {
+		if v.String() == peerID.String() {
+			includes = true
+		}
+	}
+	return includes
 }
 
 func SetInterval(fn func(), interval time.Duration) chan struct{} {

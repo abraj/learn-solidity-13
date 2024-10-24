@@ -6,9 +6,11 @@ import (
 	"time"
 )
 
-const EPOCH_BASE_MS = 1640995200000 // 1 January 2022 00:00:00 UTC
+const EPOCH_BASE_MS = 1640995200000 // 1 Jan 2022 00:00:00 UTC
 const SLOT_DURATION = 5000          // 5 sec
-const BUFFER_TIME = 50              // 50 ms
+const MAX_INITIAL_CLOCK_SYNC = 1000 // 1 sec
+const MAX_CLOCK_DRIFT = 100         // 100 ms
+const MAX_LAG = 50                  // 50 ms
 
 var networkTimeShift int
 var latestBlockNumber int
@@ -19,9 +21,11 @@ func SetNetworkTimeShift(adjustedShift int) {
 
 	if adjustedShift < 2*threshold {
 		return
-	} else if adjustedShift > SLOT_DURATION/2 {
-		log.Fatalf("[ERROR] Time drift too large! Won't perform network time sync.\n")
-		return
+	}
+
+	if adjustedShift > MAX_CLOCK_DRIFT {
+		log.Printf("[WARN] Time drift too large: %d\n", adjustedShift)
+		alpha = 0.1
 	}
 
 	newShift := alpha*float64(adjustedShift) + (1-alpha)*float64(networkTimeShift)
@@ -38,9 +42,12 @@ func NetworkTime() int64 {
 func SlotInfo() (slotNumber int, timeLeftMsec int) {
 	networkTime := NetworkTime()
 	diff := networkTime - EPOCH_BASE_MS
-	slot := diff / SLOT_DURATION
-	timeLeft := (slot+1)*SLOT_DURATION - diff
-	return int(slot), int(timeLeft)
+
+	// assuming uniform slot duration for the entire span of the blockchain
+	slotNum := diff / SLOT_DURATION
+	timeLeft := (slotNum+1)*SLOT_DURATION - diff
+
+	return int(slotNum), int(timeLeft)
 }
 
 func GetLatestBlockNumber() int {

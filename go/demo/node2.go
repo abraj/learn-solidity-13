@@ -110,7 +110,7 @@ func Node2() {
 	datastore := InitDatastore()
 	// store := InitDataCluster(ctx, node, datastore, ps, kadDHT)
 
-	AdjustNetworkTime(node, validatorsList)
+	AdjustNetworkTime(node, validatorsList, true)
 
 	InitConsensusLoop(node, validatorsList, ps)
 
@@ -161,7 +161,7 @@ func Node2() {
 	}, 8*time.Second)
 
 	timer2 := utils.ExpBackOff(func() {
-		AdjustNetworkTime(node, validatorsList)
+		AdjustNetworkTime(node, validatorsList, false)
 	}, 3*time.Second, 30*time.Second)
 
 	// ------------------

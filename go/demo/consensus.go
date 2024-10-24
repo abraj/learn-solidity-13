@@ -39,28 +39,32 @@ func payloadDataValidator(msg *pubsub.Message, validators []peer.ID) bool {
 	data := string(msg.Data)
 	from := msg.GetFrom()
 
-	if includes := isValidator(from, validators); !includes {
-		log.Println("[WARN] Invalid validator:", from)
+	if includes := utils.IsValidator(from, validators); !includes {
+		log.Printf("[WARN] Invalid validator: %s\n", from)
 		return false
 	}
 
-	// TODO: consider for current block only
-	// TODO: assert valid `phase` value
+	var payload Phase1Payload
+	err := json.Unmarshal([]byte(data), &payload)
+	if err != nil {
+		log.Println("Error unmarshalling JSON:", err)
+		return false
+	}
 
-	fmt.Println("~~~")
-	fmt.Println("msg.Data:", data, from)
+	slotNumber, timeLeftMsec := shared.SlotInfo()
+	cond1 := payload.Block == slotNumber
+	cond2 := payload.Block == slotNumber+1 && timeLeftMsec < shared.MAX_CLOCK_DRIFT/2
+	if !cond1 && !cond2 {
+		log.Printf("Invalid block number: %d (%d, %d)\n", payload.Block, slotNumber, timeLeftMsec)
+		return false
+	}
+
+	if payload.Phase != 1 {
+		log.Printf("Invalid phase value: %d (%d)\n", payload.Phase, payload.Block)
+		return false
+	}
 
 	return true
-}
-
-func isValidator(peerID peer.ID, validators []peer.ID) bool {
-	includes := false
-	for _, v := range validators {
-		if v.String() == peerID.String() {
-			includes = true
-		}
-	}
-	return includes
 }
 
 func nextBlockInfo() (int, int) {
@@ -68,7 +72,8 @@ func nextBlockInfo() (int, int) {
 	var waitTimeMsec int
 
 	slotNumber, timeLeftMsec := shared.SlotInfo()
-	if timeLeftMsec > (shared.SLOT_DURATION - shared.BUFFER_TIME) {
+	timeElapsed := shared.SLOT_DURATION - timeLeftMsec
+	if timeElapsed < shared.MAX_LAG {
 		// submit for this block, you're already late!
 		nextBlockNumber = slotNumber
 		waitTimeMsec = 0
@@ -112,15 +117,24 @@ func triggerPhase1(nextBlockNumber int, payload string, topic *pubsub.Topic) {
 	topic.Publish(context.Background(), []byte(payload))
 }
 
-func consumePhase1(msg *pubsub.Message) {
-	data := string(msg.Data)
-	from := msg.GetFrom()
+func consumePhase1(payload Phase1Payload, from peer.ID) {
+	// SHA3: [64 len hex] 32 bytes (256 bits) hash
+	if len(payload.Hash) != 64 {
+		log.Printf("Invalid hash: %s (%s)\n", payload.Hash, from)
+		return
+	}
+
+	// AES-256: [160 len hex] 80 bytes: 64 bytes (plaintext as 64 length utf8) encypted text + 16 bytes IV
+	if len(payload.Ciphertext) != 160 {
+		log.Printf("Invalid ciphertext: %s (%s)\n", payload.Ciphertext, from)
+		return
+	}
 
 	fmt.Println("<-----")
-	fmt.Println("Received message:", data, from)
+	fmt.Printf("[%d:%s] %s %s\n", payload.Block, from, payload.Hash, payload.Ciphertext)
 }
 
-func listenPhase1(topic *pubsub.Topic) {
+func listenConsensusTopic(topic *pubsub.Topic) {
 	subs, err := topic.Subscribe()
 	if err != nil {
 		panic(err)
@@ -135,13 +149,27 @@ func listenPhase1(topic *pubsub.Topic) {
 				return
 			}
 
-			consumePhase1(msg)
+			data := string(msg.Data)
+			from := msg.GetFrom()
+
+			var payload Phase1Payload
+			err = json.Unmarshal([]byte(data), &payload)
+			if err != nil {
+				log.Println("Error unmarshalling JSON:", err)
+				return
+			}
+
+			if payload.Phase == 1 {
+				consumePhase1(payload, from)
+			} else {
+				log.Fatalf("[ERROR] Unhandled phase value: %d (%d)\n", payload.Phase, payload.Block)
+			}
 		}
 	}()
 }
 
 func InitConsensusLoop(node host.Host, validators []peer.ID, ps *pubsub.PubSub) {
-	if includes := isValidator(node.ID(), validators); !includes {
+	if includes := utils.IsValidator(node.ID(), validators); !includes {
 		// current node is not a validator
 		return
 	}
@@ -159,7 +187,7 @@ func InitConsensusLoop(node host.Host, validators []peer.ID, ps *pubsub.PubSub) 
 	if err != nil {
 		panic(err)
 	}
-	listenPhase1(topic)
+	listenConsensusTopic(topic)
 
 	go func() {
 		_, initialDelayMsec := nextBlockInfo()
