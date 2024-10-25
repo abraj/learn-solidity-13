@@ -11,9 +11,6 @@ import (
 	"syscall"
 	"time"
 
-	ds "github.com/ipfs/go-datastore"
-	"github.com/ipfs/go-datastore/sync"
-	badger "github.com/ipfs/go-ds-badger3"
 	"github.com/libp2p/go-libp2p"
 	dht "github.com/libp2p/go-libp2p-kad-dht"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
@@ -85,6 +82,8 @@ func Node1() {
 	node.SetStreamHandler(client.ID, clientService.StreamHandler)
 
 	fmt.Println("protocols:", node.Mux().Protocols())
+
+	datastore := InitDatastore()
 
 	// ------------------
 
@@ -158,45 +157,8 @@ func Node1() {
 
 	// ------------------
 
-	// // create a new in-memory datastore
-	// memoryDatastore := ds.NewMapDatastore()
-	// datastore := sync.MutexWrap(memoryDatastore)
-
-	// define the path for the persistent datastore
-	path := "./.data-cluster"
-
-	// ensure that the path exists
-	if err := os.MkdirAll(path, os.ModePerm); err != nil {
-		log.Fatalf("Failed to create datastore directory: %v", err)
-	}
-
-	// create a new Badger datastore
-	badgerDatastore, err := badger.NewDatastore(path, &badger.DefaultOptions)
-	datastore := sync.MutexWrap(badgerDatastore)
-	if err != nil {
-		log.Fatalf("Failed to create badger datastore: %v", err)
-	}
-
-	// close datastore when done
-	defer datastore.Close()
-
-	key := ds.NewKey("/example/key")
-	value := []byte("Hello, Datastore!")
-
-	// put a value in the datastore
-	if err := datastore.Put(ctx, key, value); err != nil {
-		log.Fatal(err)
-	}
-
-	// retrieve a value from the datastore
-	storedValue, err := datastore.Get(ctx, key)
-	if err != nil {
-		// log.Fatal(err)
-		panic(err)
-	}
-	fmt.Printf("Stored value: %s\n", string(storedValue))
-
 	// DemoTopicRead(ctx, ps)
+	// DemoDatastore(ctx, datastore)
 
 	// ------------------
 
@@ -205,7 +167,12 @@ func Node1() {
 	signal.Notify(ch, syscall.SIGINT, syscall.SIGTERM)
 	<-ch
 	fmt.Println("Received signal, shutting down...")
-	close(timer) // cleanup SetInterval timer
+
+	// cleanup SetInterval timer
+	close(timer)
+
+	// close datastore
+	datastore.Close()
 
 	// close DHT service
 	if err := kadDHT.Close(); err != nil {

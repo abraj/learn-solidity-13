@@ -6,6 +6,8 @@ import (
 	"log"
 	"time"
 
+	ds "github.com/ipfs/go-datastore"
+	"github.com/ipfs/go-datastore/sync"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	peer "github.com/libp2p/go-libp2p/core/peer"
 )
@@ -71,4 +73,22 @@ func DemoTopicWrite(ctx context.Context, ps *pubsub.PubSub) {
 		topic.Publish(ctx, []byte("")) // empty message
 		topic.Publish(ctx, []byte("hello world!"))
 	}()
+}
+
+func DemoDatastore(ctx context.Context, datastore *sync.MutexDatastore) {
+	key := ds.NewKey("/example/key")
+	value := []byte("Hello, Datastore!")
+
+	// put a value in the datastore
+	if err := datastore.Put(ctx, key, value); err != nil {
+		log.Fatal(err)
+	}
+
+	// retrieve a value from the datastore
+	storedValue, err := datastore.Get(ctx, key)
+	if err != nil {
+		// log.Fatal(err)
+		panic(err)
+	}
+	fmt.Printf("Stored value: %s\n", string(storedValue))
 }

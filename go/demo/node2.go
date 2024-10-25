@@ -90,6 +90,8 @@ func Node2() {
 
 	fmt.Println("protocols:", node.Mux().Protocols())
 
+	datastore := InitDatastore()
+
 	// ------------------
 
 	// print the node's PeerInfo in multiaddr format
@@ -171,7 +173,12 @@ func Node2() {
 	signal.Notify(ch, syscall.SIGINT, syscall.SIGTERM)
 	<-ch
 	fmt.Println("Received signal, shutting down...")
-	close(timer) // cleanup SetInterval timer
+
+	// cleanup SetInterval timer
+	close(timer)
+
+	// close datastore
+	datastore.Close()
 
 	// close DHT service
 	if err := kadDHT.Close(); err != nil {

@@ -44,6 +44,11 @@ go build -o libp2p-node
 ./libp2p-node 3
 ```
 
+### go-libp2p
+
+- https://github.com/libp2p/go-libp2p
+- https://www.youtube.com/watch?v=BUc4xta7Mfk
+
 ### Docs
 
 - https://libp2p.github.io/js-libp2p/
