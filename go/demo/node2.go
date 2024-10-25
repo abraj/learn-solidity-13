@@ -13,6 +13,7 @@ import (
 
 	"github.com/libp2p/go-libp2p"
 	dht "github.com/libp2p/go-libp2p-kad-dht"
+	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/network"
 	peer "github.com/libp2p/go-libp2p/core/peer"
@@ -73,6 +74,12 @@ func Node2() {
 	kadDHT, err := dht.New(ctx, node, dhtOpts...)
 	if err != nil {
 		log.Fatalf("Failed to create DHT: %v", err)
+	}
+
+	// create a new PubSub service using the GossipSub router
+	ps, err := pubsub.NewGossipSub(ctx, node)
+	if err != nil {
+		log.Fatalf("Failed to create GossipSub: %v", err)
 	}
 
 	clientService := client.NewClientService()
@@ -152,7 +159,18 @@ func Node2() {
 
 	// ------------------
 
-	// ..
+	// Set up topic subscription
+	topicName := "welcome"
+	topic, err := ps.Join(topicName)
+	if err != nil {
+		panic(err)
+	}
+
+	go func() {
+		time.Sleep(10 * time.Second)
+
+		topic.Publish(ctx, []byte("hello world!"))
+	}()
 
 	// ------------------
 
