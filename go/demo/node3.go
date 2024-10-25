@@ -70,7 +70,10 @@ func Node3() {
 	}
 
 	// create a new PubSub service using the GossipSub router
-	_, err = pubsub.NewGossipSub(ctx, node)
+	pubsubOpts := []pubsub.Option{
+		pubsub.WithMessageSignaturePolicy(pubsub.StrictSign),
+	}
+	_, err = pubsub.NewGossipSub(ctx, node, pubsubOpts...)
 	if err != nil {
 		log.Fatalf("Failed to create GossipSub: %v", err)
 	}

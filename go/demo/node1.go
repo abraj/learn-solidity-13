@@ -70,7 +70,10 @@ func Node1() {
 	}
 
 	// create a new PubSub service using the GossipSub router
-	ps, err := pubsub.NewGossipSub(ctx, node)
+	pubsubOpts := []pubsub.Option{
+		pubsub.WithMessageSignaturePolicy(pubsub.StrictSign),
+	}
+	ps, err := pubsub.NewGossipSub(ctx, node, pubsubOpts...)
 	if err != nil {
 		log.Fatalf("Failed to create GossipSub: %v", err)
 	}
@@ -152,8 +155,25 @@ func Node1() {
 
 	// ------------------
 
+	// NOTE: The validator function is called while receiving as well as _sending_ messages
+	validatorPredicate := func(ctx context.Context, pid peer.ID, msg *pubsub.Message) bool {
+		if len(msg.Data) == 0 {
+			// empty message
+			return false
+		}
+		if len(msg.Data) > 1024 {
+			log.Println("[WARN] message size exceeds 1KB")
+			return false
+		}
+		return true
+	}
+
 	// Set up topic subscription
 	topicName := "welcome"
+	err = ps.RegisterTopicValidator(topicName, validatorPredicate)
+	if err != nil {
+		panic(err)
+	}
 	topic, err := ps.Join(topicName)
 	if err != nil {
 		panic(err)
