@@ -182,6 +182,11 @@ func Node3() {
 	fmt.Println("Received signal, shutting down...")
 	close(timer) // cleanup SetInterval timer
 
+	// close DHT service
+	if err := kadDHT.Close(); err != nil {
+		panic(err)
+	}
+
 	// shut the node down
 	if err := node.Close(); err != nil {
 		panic(err)
