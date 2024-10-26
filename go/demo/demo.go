@@ -3,11 +3,13 @@ package demo
 import (
 	"context"
 	"fmt"
+	"libp2pdemo/utils"
 	"log"
 	"time"
 
 	ds "github.com/ipfs/go-datastore"
 	"github.com/ipfs/go-datastore/sync"
+	crdt "github.com/ipfs/go-ds-crdt"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	peer "github.com/libp2p/go-libp2p/core/peer"
 )
@@ -91,4 +93,37 @@ func DemoDatastore(ctx context.Context, datastore *sync.MutexDatastore) {
 		panic(err)
 	}
 	fmt.Printf("Stored value: %s\n", string(storedValue))
+}
+
+func DemoDataCluster(ctx context.Context, store *crdt.Datastore) {
+	key := ds.NewKey("/example/key")
+
+	doStore := false
+
+	go func() {
+		time.Sleep(13 * time.Second)
+
+		// Example: Put a key-value pair into the datastore
+		if doStore {
+			err := store.Put(ctx, key, []byte("hello world"))
+			if err != nil {
+				panic(err)
+			}
+		}
+	}()
+
+	go func() {
+		time.Sleep(1 * time.Second)
+
+		utils.SetInterval(func() {
+			// Example: Get a value from the datastore
+			value, err := store.Get(ctx, key)
+			if err != nil {
+				// panic(err)
+				fmt.Println("Value: NOT found!")
+				return
+			}
+			fmt.Println("Value:", string(value))
+		}, 8*time.Second)
+	}()
 }

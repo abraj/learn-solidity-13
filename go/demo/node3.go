@@ -73,7 +73,7 @@ func Node3() {
 	pubsubOpts := []pubsub.Option{
 		pubsub.WithMessageSignaturePolicy(pubsub.StrictSign),
 	}
-	_, err = pubsub.NewGossipSub(ctx, node, pubsubOpts...)
+	ps, err := pubsub.NewGossipSub(ctx, node, pubsubOpts...)
 	if err != nil {
 		log.Fatalf("Failed to create GossipSub: %v", err)
 	}
@@ -84,6 +84,7 @@ func Node3() {
 	fmt.Println("protocols:", node.Mux().Protocols())
 
 	datastore := InitDatastore()
+	store := InitDataCluster(ctx, node, datastore, ps, kadDHT)
 
 	// ------------------
 
@@ -175,6 +176,8 @@ func Node3() {
 	// 	fmt.Println(">> peerInfo:", addrInfo)
 	// }()
 
+	DemoDataCluster(ctx, store)
+
 	// ------------------
 
 	// wait for a SIGINT or SIGTERM signal
@@ -188,6 +191,7 @@ func Node3() {
 
 	// close datastore
 	datastore.Close()
+	// store.Close() // hangs!
 
 	// close DHT service
 	if err := kadDHT.Close(); err != nil {
