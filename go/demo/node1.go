@@ -11,6 +11,8 @@ import (
 	"syscall"
 	"time"
 
+	ds "github.com/ipfs/go-datastore"
+	"github.com/ipfs/go-datastore/sync"
 	"github.com/libp2p/go-libp2p"
 	dht "github.com/libp2p/go-libp2p-kad-dht"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
@@ -154,6 +156,29 @@ func Node1() {
 	}
 
 	// ------------------
+
+	// create a new in-memory datastore
+	memoryDatastore := ds.NewMapDatastore()
+	datastore := sync.MutexWrap(memoryDatastore)
+
+	// close datastore when done
+	defer datastore.Close()
+
+	key := ds.NewKey("/example/key")
+	value := []byte("Hello, Datastore!")
+
+	// put a value in the datastore
+	if err := datastore.Put(ctx, key, value); err != nil {
+		log.Fatal(err)
+	}
+
+	// retrieve a value from the datastore
+	storedValue, err := datastore.Get(ctx, key)
+	if err != nil {
+		// log.Fatal(err)
+		panic(err)
+	}
+	fmt.Printf("Stored value: %s\n", string(storedValue))
 
 	// DemoTopicRead(ctx, ps)
 
