@@ -89,8 +89,8 @@ func Node1() {
 	// TODO: fetch validator set (registry) from blockchain core contract
 	validators := bootstrapPeers
 
-	networkTime := InitNetworkTime(node, validators)
-	fmt.Println("networkTime:", networkTime)
+	// TODO: consider periodic adjustment
+	AdjustNetworkTime(node, validators)
 
 	// ------------------
 

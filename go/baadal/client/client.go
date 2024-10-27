@@ -2,8 +2,8 @@ package client
 
 import (
 	"fmt"
+	"libp2pdemo/shared"
 	"libp2pdemo/utils"
-	"time"
 
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/protocol"
@@ -69,13 +69,14 @@ func handleStream(s network.Stream) error {
 }
 
 func createResponse(data string) string {
+	timestamp1 := shared.NetworkTime() // record the time when the request was received
 	resp := ""
 	clientInfo := "network_name: baadal; client_version: 0.1.0"
 	if data == "clientinfo" {
 		resp = clientInfo
 	} else if data == "timestamp" {
-		timestamp := time.Now().UnixMilli()
-		resp = fmt.Sprintf("%s; epoch_timestamp: %d", clientInfo, timestamp)
+		timestamp2 := shared.NetworkTime() // record the time when the response was sent
+		resp = fmt.Sprintf("%s; epoch_t1: %d; epoch_t2: %d", clientInfo, timestamp1, timestamp2)
 	}
 	return resp
 }

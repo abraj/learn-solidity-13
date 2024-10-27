@@ -1,6 +1,29 @@
 package utils
 
-import "strings"
+import (
+	"log"
+	"strings"
+)
+
+func ValidateResponse(respMap map[string]string, expectedArgs ...string) bool {
+	cond1 := respMap != nil && respMap["network_name"] == "baadal" && len(respMap["client_version"]) > 0
+	if !cond1 {
+		return false
+	}
+
+	if len(expectedArgs) > 0 {
+		for _, val := range expectedArgs {
+			item := respMap[val]
+			cond := len(item) > 0
+			if !cond {
+				log.Printf("Expected arg (%s) not found in resp: %v", val, respMap)
+				return false
+			}
+		}
+	}
+
+	return true
+}
 
 /*
 Creates a map object from a standard protocol response.
