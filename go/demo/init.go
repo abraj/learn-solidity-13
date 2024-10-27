@@ -2,6 +2,8 @@ package demo
 
 import (
 	"context"
+	"libp2pdemo/utils"
+	stdsync "sync"
 	"time"
 
 	ipfslite "github.com/hsanjuan/ipfs-lite"
@@ -14,6 +16,7 @@ import (
 	dht "github.com/libp2p/go-libp2p-kad-dht"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	"github.com/libp2p/go-libp2p/core/host"
+	peer "github.com/libp2p/go-libp2p/core/peer"
 )
 
 func InitDatastore() *sync.MutexDatastore {
@@ -69,4 +72,47 @@ func InitDataCluster(ctx context.Context, node host.Host, datastore *sync.MutexD
 	}
 
 	return store
+}
+
+func InitNetworkTime(node host.Host, validators []peer.AddrInfo) int64 {
+	// TODO: randomly select a smaller subset of validators for reduce communication overhead
+
+	localTime := time.Now().UnixMilli()
+	if len(validators) == 0 {
+		return localTime
+	}
+
+	var (
+		result = make(map[string]int64)
+		mu     stdsync.Mutex
+		wg     stdsync.WaitGroup
+	)
+
+	for _, validator := range validators {
+		wg.Add(1) // Increment the WaitGroup counter
+
+		go func(v peer.AddrInfo) {
+			defer wg.Done() // Decrement the counter when the goroutine completes
+			timestamp := queryTime(node, v.ID)
+
+			mu.Lock() // maps are not thread-safe in Go
+			result[v.ID.String()] = timestamp
+			mu.Unlock()
+		}(validator) // Pass `validator` as an argument to avoid closure issues
+	}
+
+	wg.Wait() // Wait for all goroutines to finish
+
+	timestamps := []int64{}
+	for _, value := range result {
+		if value == 0 {
+			continue
+		}
+		// TODO: filter extreme values
+		// TODO: adjust for network delay
+		timestamps = append(timestamps, value)
+	}
+
+	median := utils.Median(timestamps)
+	return median
 }

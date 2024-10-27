@@ -19,7 +19,7 @@ func ResponseMap(resp string) map[string]string {
 		return nil
 	}
 
-	m := make(map[string]string)
+	respMap := make(map[string]string)
 	for _, p := range parts {
 		parts2 := strings.Split(strings.TrimSpace(p), ":")
 		if len(parts2) != 2 {
@@ -27,12 +27,12 @@ func ResponseMap(resp string) map[string]string {
 		}
 		k := strings.TrimSpace(parts2[0])
 		v := strings.TrimSpace(parts2[1])
-		m[k] = v
+		respMap[k] = v
 	}
 
-	if len(m) == 0 {
+	if len(respMap) == 0 {
 		return nil
 	}
 
-	return m
+	return respMap
 }

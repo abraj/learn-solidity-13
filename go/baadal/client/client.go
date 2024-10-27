@@ -3,6 +3,7 @@ package client
 import (
 	"fmt"
 	"libp2pdemo/utils"
+	"time"
 
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/protocol"
@@ -69,8 +70,12 @@ func handleStream(s network.Stream) error {
 
 func createResponse(data string) string {
 	resp := ""
+	clientInfo := "network_name: baadal; client_version: 0.1.0"
 	if data == "clientinfo" {
-		resp = "network_name: baadal; client_version: 0.1.0"
+		resp = clientInfo
+	} else if data == "timestamp" {
+		timestamp := time.Now().UnixMilli()
+		resp = fmt.Sprintf("%s; epoch_timestamp: %d", clientInfo, timestamp)
 	}
 	return resp
 }

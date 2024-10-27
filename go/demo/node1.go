@@ -86,6 +86,12 @@ func Node1() {
 	datastore := InitDatastore()
 	// store := InitDataCluster(ctx, node, datastore, ps, kadDHT)
 
+	// TODO: fetch validator set (registry) from blockchain core contract
+	validators := bootstrapPeers
+
+	networkTime := InitNetworkTime(node, validators)
+	fmt.Println("networkTime:", networkTime)
+
 	// ------------------
 
 	// print the node's PeerInfo in multiaddr format
