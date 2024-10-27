@@ -48,6 +48,12 @@ go build -o libp2p-node
 
 - https://github.com/libp2p/go-libp2p
 - https://www.youtube.com/watch?v=BUc4xta7Mfk
+- https://ipfscluster.io/documentation/guides/consensus/
+
+### Consensus
+
+- https://www.youtube.com/playlist?list=PLZvgWu86XaWkpnQa6-OA7DG6ilM_RnxhW
+- https://youtu.be/diqGSOLpyQ8?list=PLZvgWu86XaWkpnQa6-OA7DG6ilM_RnxhW&t=137
 
 ### Docs
 

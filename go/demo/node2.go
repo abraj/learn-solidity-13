@@ -80,7 +80,7 @@ func Node2() {
 	pubsubOpts := []pubsub.Option{
 		pubsub.WithMessageSignaturePolicy(pubsub.StrictSign),
 	}
-	ps, err := pubsub.NewGossipSub(ctx, node, pubsubOpts...)
+	_, err = pubsub.NewGossipSub(ctx, node, pubsubOpts...)
 	if err != nil {
 		log.Fatalf("Failed to create GossipSub: %v", err)
 	}
@@ -91,7 +91,7 @@ func Node2() {
 	fmt.Println("protocols:", node.Mux().Protocols())
 
 	datastore := InitDatastore()
-	store := InitDataCluster(ctx, node, datastore, ps, kadDHT)
+	// store := InitDataCluster(ctx, node, datastore, ps, kadDHT)
 
 	// ------------------
 
@@ -166,7 +166,7 @@ func Node2() {
 	// ------------------
 
 	// DemoTopicWrite(ctx, ps)
-	DemoDataCluster(ctx, store)
+	// DemoDataCluster(ctx, store)
 
 	// ------------------
 

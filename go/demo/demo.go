@@ -30,6 +30,7 @@ func validatorPredicate(ctx context.Context, pid peer.ID, msg *pubsub.Message) b
 func DemoTopicRead(ctx context.Context, ps *pubsub.PubSub) {
 	// Set up topic subscription
 	topicName := "welcome"
+
 	err := ps.RegisterTopicValidator(topicName, validatorPredicate)
 	if err != nil {
 		panic(err)
@@ -60,6 +61,7 @@ func DemoTopicRead(ctx context.Context, ps *pubsub.PubSub) {
 func DemoTopicWrite(ctx context.Context, ps *pubsub.PubSub) {
 	// Set up topic subscription
 	topicName := "welcome"
+
 	err := ps.RegisterTopicValidator(topicName, validatorPredicate)
 	if err != nil {
 		panic(err)
