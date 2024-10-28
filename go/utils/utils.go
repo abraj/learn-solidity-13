@@ -33,6 +33,37 @@ func SetInterval(fn func(), interval time.Duration) chan struct{} {
 	return done // Return the channel to stop the interval
 }
 
+func ExpBackOff(fn func(), initialInterval time.Duration, finalInterval time.Duration) chan struct{} {
+	currentInterval := initialInterval
+	backoffActive := true
+
+	ticker := time.NewTicker(currentInterval)
+	done := make(chan struct{})
+
+	go func() {
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				if backoffActive {
+					currentInterval = 2 * currentInterval
+					if currentInterval < finalInterval {
+						ticker.Reset(currentInterval)
+					} else {
+						ticker.Reset(finalInterval)
+						backoffActive = false
+					}
+				}
+				fn() // Call the provided function at each tick
+			case <-done:
+				return // Exit the Goroutine when done is closed
+			}
+		}
+	}()
+
+	return done // Return the channel to stop the interval
+}
+
 func Median(values []int64) int64 {
 	n := len(values)
 	if n == 0 {

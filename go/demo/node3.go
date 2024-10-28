@@ -151,9 +151,9 @@ func Node3() {
 		}
 	}, 8*time.Second)
 
-	timer2 := utils.SetInterval(func() {
+	timer2 := utils.ExpBackOff(func() {
 		AdjustNetworkTime(node, validatorsList)
-	}, 30*time.Second)
+	}, 3*time.Second, 30*time.Second)
 
 	// ------------------
 
