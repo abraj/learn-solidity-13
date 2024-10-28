@@ -5,6 +5,9 @@ import (
 	"time"
 )
 
+const EPOCH_BASE_MS = 1640995200000 // 1 January 2022 00:00:00 UTC
+const SLOT_DURATION = 5000          // 5 sec
+
 var networkTimeShift int
 
 func SetNetworkTimeShift(adjustedShift int) {
@@ -24,4 +27,13 @@ func SetNetworkTimeShift(adjustedShift int) {
 
 func NetworkTime() int64 {
 	return time.Now().UnixMilli() + int64(networkTimeShift)
+}
+
+func SlotInfo() (int, float32) {
+	networkTime := NetworkTime()
+	diff := networkTime - EPOCH_BASE_MS
+	slot := diff / SLOT_DURATION
+	timeLeft := (slot+1)*SLOT_DURATION - diff
+	timeLeftSec := math.Round(float64(timeLeft)/100) / 10
+	return int(slot), float32(timeLeftSec)
 }
