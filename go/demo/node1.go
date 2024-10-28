@@ -21,9 +21,9 @@ import (
 )
 
 func Node1() {
-	privateKeyStr := "3077020101042008074adae939fc135ba0eed6a153115eca6315b3497e5d3f1597de5b31605e58a00a06082a8648ce3d030107a14403420004b21a4ce7c28b24708b44db8f6e4d5680270828d755f9d1d5f4325c30b079ba8a0daadc90c36abf3949a8752dc482f8dc6f205c8f46292c6b1454a24bbee7e847"
-	privKey := utils.HexToPrivKey(privateKeyStr)
-	privateKey := utils.ConvertECDSAKeyToLibp2p(privKey)
+	ecdsaPrivateKeyStr := "3077020101042008074adae939fc135ba0eed6a153115eca6315b3497e5d3f1597de5b31605e58a00a06082a8648ce3d030107a14403420004b21a4ce7c28b24708b44db8f6e4d5680270828d755f9d1d5f4325c30b079ba8a0daadc90c36abf3949a8752dc482f8dc6f205c8f46292c6b1454a24bbee7e847"
+	privateKey := utils.DecodeECDSAPrivateKey(ecdsaPrivateKeyStr)
+	// privateKey := utils.DecodeEd25519PrivateKey(privateKeyStr)
 
 	bootstrapPeerAddrs := []string{
 		// addresses of "other" bootstrap peers
