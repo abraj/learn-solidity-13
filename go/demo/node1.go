@@ -29,6 +29,13 @@ func Node1() {
 		// addresses of "other" bootstrap peers
 	}
 
+	// TODO: fetch validator set (registry) from blockchain core contract
+	validators := []string{
+		"QmaT8zFZp8mKg6dAqxp4wNc7P9dn2WK6imPA37yG8zWwpq",
+		"QmXfjanvuRK2sGZDrKa388ZNHak5DNhkT1Pzibf4YLu5FR",
+		// "QmQNYyFizjhEFG2Sd4irQS2QvVa7kAwh9mNcsEraSBG4KB",
+	}
+
 	ctx := context.Background()
 
 	// ------------------
@@ -56,6 +63,16 @@ func Node1() {
 			panic(err)
 		}
 		bootstrapPeers = append(bootstrapPeers, *addrInfo)
+	}
+
+	// create validator nodes' peerIDs using their string IDs
+	var validatorsList []peer.ID
+	for _, idStr := range validators {
+		peerID, err := peer.Decode(idStr)
+		if err != nil {
+			panic(err)
+		}
+		validatorsList = append(validatorsList, peerID)
 	}
 
 	// create a new instance of DHT service
@@ -86,11 +103,7 @@ func Node1() {
 	datastore := InitDatastore()
 	// store := InitDataCluster(ctx, node, datastore, ps, kadDHT)
 
-	// TODO: fetch validator set (registry) from blockchain core contract
-	validators := bootstrapPeers
-
-	// TODO: consider periodic adjustment
-	AdjustNetworkTime(node, validators)
+	AdjustNetworkTime(node, validatorsList)
 
 	// ------------------
 
@@ -129,7 +142,7 @@ func Node1() {
 		},
 	})
 
-	timer := utils.SetInterval(func() {
+	timer1 := utils.SetInterval(func() {
 		// peersList := node.Peerstore().Peers()
 		peersList := node.Network().Peers()
 		fmt.Printf("Number of peers: %d\n", len(peersList))
@@ -137,6 +150,10 @@ func Node1() {
 			fmt.Println("", peerId)
 		}
 	}, 8*time.Second)
+
+	timer2 := utils.SetInterval(func() {
+		AdjustNetworkTime(node, validatorsList)
+	}, 30*time.Second)
 
 	// ------------------
 
@@ -176,8 +193,9 @@ func Node1() {
 	<-ch
 	fmt.Println("Received signal, shutting down...")
 
-	// cleanup SetInterval timer
-	close(timer)
+	// cleanup SetInterval timers
+	close(timer1)
+	close(timer2)
 
 	// close datastore
 	datastore.Close()

@@ -73,7 +73,7 @@ func queryTime(node host.Host, peerID peer.ID) (int64, int64) {
 	return 0, t0
 }
 
-func getNetworkTimeShift(node host.Host, validators []peer.AddrInfo) int {
+func getNetworkTimeShift(node host.Host, validators []peer.ID) int {
 	if len(validators) == 0 {
 		return 0
 	}
@@ -89,10 +89,15 @@ func getNetworkTimeShift(node host.Host, validators []peer.AddrInfo) int {
 	for _, validator := range validators {
 		wg.Add(1) // Increment the WaitGroup counter
 
-		go func(v peer.AddrInfo) {
+		go func(v peer.ID) {
 			defer wg.Done() // Decrement the counter when the goroutine completes
 
-			timestamp, t0 := queryTime(node, v.ID)
+			if node.ID().String() == v.String() {
+				// ignore if the current node is in the validator list
+				return
+			}
+
+			timestamp, t0 := queryTime(node, v)
 
 			if timestamp == 0 {
 				// filter invalid or timed out values
@@ -110,7 +115,7 @@ func getNetworkTimeShift(node host.Host, validators []peer.AddrInfo) int {
 			}
 
 			mu.Lock() // maps are not thread-safe in Go
-			result[v.ID.String()] = shift
+			result[v.String()] = shift
 			mu.Unlock()
 		}(validator) // Pass `validator` as an argument to avoid closure issues
 	}
@@ -132,7 +137,7 @@ func getNetworkTimeShift(node host.Host, validators []peer.AddrInfo) int {
 	return timeShift
 }
 
-func AdjustNetworkTime(node host.Host, validators []peer.AddrInfo) {
+func AdjustNetworkTime(node host.Host, validators []peer.ID) {
 	timeShift := getNetworkTimeShift(node, validators)
 	shared.SetNetworkTimeShift(timeShift)
 }
