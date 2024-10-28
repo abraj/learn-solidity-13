@@ -112,6 +112,8 @@ func Node2() {
 
 	AdjustNetworkTime(node, validatorsList)
 
+	InitConsensusLoop()
+
 	// ------------------
 
 	// print the node's PeerInfo in multiaddr format

@@ -7,8 +7,10 @@ import (
 
 const EPOCH_BASE_MS = 1640995200000 // 1 January 2022 00:00:00 UTC
 const SLOT_DURATION = 5000          // 5 sec
+const BUFFER_TIME = 50              // 50 ms
 
 var networkTimeShift int
+var latestBlockNumber int
 
 func SetNetworkTimeShift(adjustedShift int) {
 	alpha := 0.2   // smoothing factor
@@ -29,11 +31,20 @@ func NetworkTime() int64 {
 	return time.Now().UnixMilli() + int64(networkTimeShift)
 }
 
-func SlotInfo() (int, float32) {
+func SlotInfo() (slotNumber int, timeLeftMsec int) {
 	networkTime := NetworkTime()
 	diff := networkTime - EPOCH_BASE_MS
 	slot := diff / SLOT_DURATION
 	timeLeft := (slot+1)*SLOT_DURATION - diff
-	timeLeftSec := math.Round(float64(timeLeft)/100) / 10
-	return int(slot), float32(timeLeftSec)
+	return int(slot), int(timeLeft)
+}
+
+func GetLatestBlockNumber() int {
+	return latestBlockNumber
+}
+
+func SetLatestBlockNumber(newBlockNumber int) {
+	if newBlockNumber > latestBlockNumber {
+		latestBlockNumber = newBlockNumber
+	}
 }
