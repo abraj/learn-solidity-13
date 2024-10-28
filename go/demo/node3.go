@@ -90,7 +90,7 @@ func Node3() {
 	pubsubOpts := []pubsub.Option{
 		pubsub.WithMessageSignaturePolicy(pubsub.StrictSign),
 	}
-	_, err = pubsub.NewGossipSub(ctx, node, pubsubOpts...)
+	ps, err := pubsub.NewGossipSub(ctx, node, pubsubOpts...)
 	if err != nil {
 		log.Fatalf("Failed to create GossipSub: %v", err)
 	}
@@ -105,7 +105,7 @@ func Node3() {
 
 	AdjustNetworkTime(node, validatorsList)
 
-	InitConsensusLoop()
+	InitConsensusLoop(node, validatorsList, ps)
 
 	// ------------------
 
