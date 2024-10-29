@@ -24,13 +24,52 @@ type Phase1Payload struct {
 
 const consensusTopic = "baadal-consensus"
 
+// NOTE: The validator function is called while receiving (non-local) messages
+// as well as _sending_ messages.
+func payloadDataValidator(msg *pubsub.Message, validators []peer.ID) bool {
+	if len(msg.Data) == 0 {
+		log.Println("[WARN] empty message")
+		return false
+	}
+	if len(msg.Data) > 1024 {
+		log.Println("[WARN] message size exceeds 1KB")
+		return false
+	}
+
+	data := string(msg.Data)
+	from := msg.GetFrom()
+
+	if includes := isValidator(from, validators); !includes {
+		log.Println("[WARN] Invalid validator:", from)
+		return false
+	}
+
+	// TODO: consider for current block only
+	// TODO: assert valid `phase` value
+
+	fmt.Println("~~~")
+	fmt.Println("msg.Data:", data, from)
+
+	return true
+}
+
+func isValidator(peerID peer.ID, validators []peer.ID) bool {
+	includes := false
+	for _, v := range validators {
+		if v.String() == peerID.String() {
+			includes = true
+		}
+	}
+	return includes
+}
+
 func nextBlockInfo() (int, int) {
 	var nextBlockNumber int
 	var waitTimeMsec int
 
 	slotNumber, timeLeftMsec := shared.SlotInfo()
 	if timeLeftMsec > (shared.SLOT_DURATION - shared.BUFFER_TIME) {
-		// submit for this block
+		// submit for this block, you're already late!
 		nextBlockNumber = slotNumber
 		waitTimeMsec = 0
 	} else {
@@ -40,7 +79,7 @@ func nextBlockInfo() (int, int) {
 	}
 
 	if nextBlockNumber <= shared.GetLatestBlockNumber() {
-		return 0, shared.SLOT_DURATION / 2
+		return 0, timeLeftMsec + shared.SLOT_DURATION
 	}
 	return nextBlockNumber, waitTimeMsec
 }
@@ -73,6 +112,14 @@ func triggerPhase1(nextBlockNumber int, payload string, topic *pubsub.Topic) {
 	topic.Publish(context.Background(), []byte(payload))
 }
 
+func consumePhase1(msg *pubsub.Message) {
+	data := string(msg.Data)
+	from := msg.GetFrom()
+
+	fmt.Println("<-----")
+	fmt.Println("Received message:", data, from)
+}
+
 func listenPhase1(topic *pubsub.Topic) {
 	subs, err := topic.Subscribe()
 	if err != nil {
@@ -80,6 +127,7 @@ func listenPhase1(topic *pubsub.Topic) {
 	}
 
 	go func() {
+		defer subs.Cancel()
 		for {
 			msg, err := subs.Next(context.Background())
 			if err != nil {
@@ -87,38 +135,44 @@ func listenPhase1(topic *pubsub.Topic) {
 				return
 			}
 
-			fmt.Println("------")
-			fmt.Printf("Received message: %s from %s\n", msg.Data, msg.GetFrom())
+			consumePhase1(msg)
 		}
 	}()
 }
 
 func InitConsensusLoop(node host.Host, validators []peer.ID, ps *pubsub.PubSub) {
-	// err := ps.RegisterTopicValidator(consensusTopic, payloadValidator)
-	// if err != nil {
-	// 	panic(err)
-	// }
+	if includes := isValidator(node.ID(), validators); !includes {
+		// current node is not a validator
+		return
+	}
+
+	payloadValidator := func(ctx context.Context, pid peer.ID, msg *pubsub.Message) bool {
+		// NOTE: `pid` could be an intermediary or relaying node, not necessarily the original publisher
+		// unlike `msg.GetFrom()` which is the peer ID of the original publisher of the message
+		return payloadDataValidator(msg, validators)
+	}
+	err := ps.RegisterTopicValidator(consensusTopic, payloadValidator)
+	if err != nil {
+		panic(err)
+	}
 	topic, err := ps.Join(consensusTopic)
 	if err != nil {
 		panic(err)
 	}
 	listenPhase1(topic)
 
-	includes := false
-	for _, v := range validators {
-		if v.String() == node.ID().String() {
-			includes = true
-		}
-	}
-
-	if !includes {
-		return
-	}
-
 	go func() {
-		time.Sleep(10 * time.Second)
+		_, initialDelayMsec := nextBlockInfo()
+		additionalDelay := shared.SLOT_DURATION
+		delay := initialDelayMsec + additionalDelay
+		time.Sleep(time.Duration(delay) * time.Millisecond)
 
 		for {
+			midpointDelay := shared.SLOT_DURATION / 2 // drift to slot midpoint
+			randomDelay := int(rand.Float64() * 1000) // 0-1s
+			delay := midpointDelay + randomDelay
+			time.Sleep(time.Duration(delay) * time.Millisecond)
+
 			nextBlockNumber, waitTimeMsec := nextBlockInfo()
 			if nextBlockNumber > 0 {
 				ticker := time.After(time.Duration(waitTimeMsec) * time.Millisecond)
@@ -129,8 +183,6 @@ func InitConsensusLoop(node host.Host, validators []peer.ID, ps *pubsub.PubSub) 
 			} else {
 				time.Sleep(time.Duration(waitTimeMsec) * time.Millisecond)
 			}
-			duration := shared.BUFFER_TIME + int(rand.Float64()*1000)
-			time.Sleep(time.Duration(duration) * time.Millisecond)
 		}
 	}()
 }

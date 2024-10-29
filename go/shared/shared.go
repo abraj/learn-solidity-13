@@ -1,6 +1,7 @@
 package shared
 
 import (
+	"log"
 	"math"
 	"time"
 )
@@ -17,6 +18,9 @@ func SetNetworkTimeShift(adjustedShift int) {
 	threshold := 5 // Hysteresis correction threshold
 
 	if adjustedShift < 2*threshold {
+		return
+	} else if adjustedShift > SLOT_DURATION/2 {
+		log.Fatalf("[ERROR] Time drift too large! Won't perform network time sync.\n")
 		return
 	}
 

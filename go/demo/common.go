@@ -23,12 +23,12 @@ func onConnected(node host.Host, peerID peer.ID) {
 	if utils.ValidateResponse(respMap) {
 		// fmt.Println(">>", peerID, "Valid")
 	} else {
-		evictPeer(node, peerID)
+		EvictPeer(node, peerID)
 		fmt.Println(">> Evicted:", peerID)
 	}
 }
 
-func evictPeer(node host.Host, peerID peer.ID) {
+func EvictPeer(node host.Host, peerID peer.ID) {
 	// kadDHT.RoutingTable().RemovePeer(peerId)
 	// node.ConnManager().TagPeer(peerID, "blocked", -1000)
 
@@ -109,7 +109,7 @@ func getNetworkTimeShift(node host.Host, validators []peer.ID) int {
 			if absDiff < 0 {
 				absDiff = -absDiff
 			}
-			if absDiff > 60*1000 {
+			if absDiff > shared.SLOT_DURATION/2 {
 				// filter extreme values
 				return
 			}
@@ -138,6 +138,8 @@ func getNetworkTimeShift(node host.Host, validators []peer.ID) int {
 }
 
 func AdjustNetworkTime(node host.Host, validators []peer.ID) {
-	timeShift := getNetworkTimeShift(node, validators)
-	shared.SetNetworkTimeShift(timeShift)
+	go func() {
+		timeShift := getNetworkTimeShift(node, validators)
+		shared.SetNetworkTimeShift(timeShift)
+	}()
 }

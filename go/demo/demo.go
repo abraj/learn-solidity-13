@@ -14,7 +14,8 @@ import (
 	peer "github.com/libp2p/go-libp2p/core/peer"
 )
 
-// NOTE: The validator function is called while receiving as well as _sending_ messages
+// NOTE: The validator function is called while receiving (non-local) messages
+// as well as _sending_ messages.
 func validatorPredicate(ctx context.Context, pid peer.ID, msg *pubsub.Message) bool {
 	if len(msg.Data) == 0 {
 		// empty message
@@ -46,6 +47,7 @@ func DemoTopicRead(ctx context.Context, ps *pubsub.PubSub) {
 	}
 
 	go func() {
+		defer subs.Cancel()
 		for {
 			msg, err := subs.Next(ctx)
 			if err != nil {
@@ -53,7 +55,10 @@ func DemoTopicRead(ctx context.Context, ps *pubsub.PubSub) {
 				return
 			}
 
-			fmt.Printf("Received message: %s from %s\n", msg.Data, msg.GetFrom())
+			data := string(msg.Data)
+			from := msg.GetFrom()
+
+			fmt.Printf("Received message: %s from %s\n", data, from)
 		}
 	}()
 }
