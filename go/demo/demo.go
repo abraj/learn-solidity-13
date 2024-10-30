@@ -80,7 +80,10 @@ func DemoTopicWrite(ctx context.Context, ps *pubsub.PubSub) {
 		time.Sleep(10 * time.Second)
 
 		topic.Publish(ctx, []byte("")) // empty message
-		topic.Publish(ctx, []byte("hello world!"))
+		err := topic.Publish(ctx, []byte("hello world!"))
+		if err != nil {
+			panic(err)
+		}
 	}()
 }
 

@@ -7,6 +7,7 @@ import (
 	ipfslite "github.com/hsanjuan/ipfs-lite"
 	blockstore "github.com/ipfs/boxo/blockstore"
 	ds "github.com/ipfs/go-datastore"
+	"github.com/ipfs/go-datastore/query"
 	"github.com/ipfs/go-datastore/sync"
 
 	// badger "github.com/ipfs/go-ds-badger3"
@@ -15,6 +16,30 @@ import (
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	"github.com/libp2p/go-libp2p/core/host"
 )
+
+func QueryWithPrefix(datastore ds.Datastore, prefix string) ([]ds.Key, []string, error) {
+	// Prepare the query with a prefix filter
+	q := query.Query{Prefix: prefix}
+
+	// Run the query
+	results, err := datastore.Query(context.Background(), q)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer results.Close()
+
+	// Collect keys and values
+	var keys []ds.Key
+	var values []string
+	for result := range results.Next() {
+		if result.Error != nil {
+			return nil, nil, result.Error
+		}
+		keys = append(keys, ds.NewKey(result.Key))
+		values = append(values, string(result.Value))
+	}
+	return keys, values, nil
+}
 
 func InitDatastore() *sync.MutexDatastore {
 	// create a new in-memory datastore

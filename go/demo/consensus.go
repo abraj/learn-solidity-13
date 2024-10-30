@@ -10,6 +10,7 @@ import (
 	"math/rand"
 	"time"
 
+	ds "github.com/ipfs/go-datastore"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	"github.com/libp2p/go-libp2p/core/host"
 	peer "github.com/libp2p/go-libp2p/core/peer"
@@ -22,11 +23,47 @@ type Phase1Payload struct {
 	Ciphertext string `json:"ciphertext"`
 }
 
+type Phase1Data struct {
+	Hash       string `json:"hash"`
+	Ciphertext string `json:"ciphertext"`
+}
+
+type Channels struct {
+	quorum chan bool
+}
+
 const consensusTopic = "baadal-consensus"
+const consensusPrefix = "/consensus/block"
+
+func channelsFactory(channelsMap map[string]Channels, key string) Channels {
+	if channelsMap[key].quorum == nil {
+		timer := time.NewTimer(shared.PHASE_DURATION * time.Millisecond)
+		quorum := make(chan bool)
+
+		// mutex not needed (since no parallel goroutines)
+		channelsMap[key] = Channels{quorum}
+
+		go func() {
+			defer timer.Stop()
+			defer close(quorum)
+			select {
+			case <-quorum:
+				// quorum achieved
+				fmt.Println("triggerPhase2..")
+			case <-timer.C:
+				// timeout
+			}
+		}()
+	}
+	return channelsMap[key]
+}
 
 // NOTE: The validator function is called while receiving (non-local) messages
 // as well as _sending_ messages.
-func payloadDataValidator(msg *pubsub.Message, validators []peer.ID) bool {
+func payloadDataValidator(ctx context.Context, pid peer.ID, msg *pubsub.Message) bool {
+	// NOTE: `pid` could be an intermediary or relaying node, not necessarily the original publisher
+	// unlike `msg.GetFrom()` which is the peer ID of the original publisher of the message
+
 	if len(msg.Data) == 0 {
 		log.Println("[WARN] empty message")
 		return false
@@ -37,12 +74,7 @@ func payloadDataValidator(msg *pubsub.Message, validators []peer.ID) bool {
 	}
 
 	data := string(msg.Data)
-	from := msg.GetFrom()
-
-	if includes := utils.IsValidator(from, validators); !includes {
-		log.Printf("[WARN] Invalid validator: %s\n", from)
-		return false
-	}
+	// from := msg.GetFrom()
 
 	var payload Phase1Payload
 	err := json.Unmarshal([]byte(data), &payload)
@@ -112,12 +144,56 @@ func createPhase1Payload(blockNumber int, entropy string) string {
 }
 
 // phase1: commit phase
-func triggerPhase1(nextBlockNumber int, payload string, topic *pubsub.Topic) {
+func triggerPhase1(nextBlockNumber int, data string, topic *pubsub.Topic, validators []peer.ID, datastore ds.Datastore) {
 	shared.SetLatestBlockNumber(nextBlockNumber)
-	topic.Publish(context.Background(), []byte(payload))
+
+	// var payload Phase1Payload
+	// err := json.Unmarshal([]byte(data), &payload)
+	// if err != nil {
+	// 	log.Println("Error unmarshalling JSON:", err)
+	// 	return
+	// }
+
+	validatorsList, err := json.Marshal(validators)
+	if err != nil {
+		log.Println("Error marshalling validators list:", err)
+		return
+	}
+	validatorsListStr := string(validatorsList)
+
+	validatorsKey := ds.NewKey(consensusPrefix + fmt.Sprintf("/%d/validators", nextBlockNumber))
+	if err := datastore.Put(context.Background(), validatorsKey, []byte(validatorsListStr)); err != nil {
+		log.Println(fmt.Sprintf("Error setting data for key: %s", validatorsKey), err)
+		return
+	}
+
+	err = topic.Publish(context.Background(), []byte(data))
+	if err != nil {
+		panic(err)
+	}
 }
 
-func consumePhase1(payload Phase1Payload, from peer.ID) {
+func consumePhase1(payload Phase1Payload, from peer.ID, datastore ds.Datastore, channels Channels) {
+	validatorsKey := ds.NewKey(consensusPrefix + fmt.Sprintf("/%d/validators", payload.Block))
+	validatorsList, err := datastore.Get(context.Background(), validatorsKey)
+	if err != nil {
+		// log.Println(fmt.Sprintf("Error getting data for key: %s", validatorsKey), err)
+		return
+	}
+	// validatorsListStr := string(validatorsList)
+
+	validators := make([]peer.ID, 0)
+	err = json.Unmarshal(validatorsList, &validators)
+	if err != nil {
+		log.Println("Error unmarshalling JSON:", err)
+		return
+	}
+
+	if includes := utils.IsValidator(from, validators); !includes {
+		log.Printf("[WARN] Invalid validator: %s\n", from)
+		return
+	}
+
 	// SHA3: [64 len hex] 32 bytes (256 bits) hash
 	if len(payload.Hash) != 64 {
 		log.Printf("Invalid hash: %s (%s)\n", payload.Hash, from)
@@ -130,18 +206,49 @@ func consumePhase1(payload Phase1Payload, from peer.ID) {
 		return
 	}
 
-	fmt.Println("<-----")
-	fmt.Printf("[%d:%s] %s %s\n", payload.Block, from, payload.Hash, payload.Ciphertext)
+	data := Phase1Data{Hash: payload.Hash, Ciphertext: payload.Ciphertext}
+	p1Data, err := json.Marshal(data)
+	if err != nil {
+		log.Println("Error marshalling JSON:", err)
+		return
+	}
+
+	p1DataStr := string(p1Data)
+	p1Key := ds.NewKey(consensusPrefix + fmt.Sprintf("/%d/phase%d/%s", payload.Block, payload.Phase, from))
+	if err := datastore.Put(context.Background(), p1Key, []byte(p1DataStr)); err != nil {
+		log.Println(fmt.Sprintf("Error putting value in datastore for key: %s", p1Key), err)
+		return
+	}
+
+	prefix := consensusPrefix + fmt.Sprintf("/%d/phase%d", payload.Block, payload.Phase)
+	keys, _, err := QueryWithPrefix(datastore, prefix)
+	if err != nil {
+		log.Println(fmt.Sprintf("Error querying datastore with prefix: %s", prefix), err)
+		return
+	}
+
+	fmt.Println("<---- prefix:", len(validators), len(keys), prefix)
+	// fmt.Println("keys:", keys)
+	// fmt.Println("values:", values)
+
+	// quorum: 3/4 majority
+	if len(keys)*4 >= len(validators)*3 {
+		channels.quorum <- true
+	}
+
+	// TODO: cleanup memory store, datastore, etc. for each /block-number
 }
 
-func listenConsensusTopic(topic *pubsub.Topic) {
+func listenConsensusTopic(topic *pubsub.Topic, datastore ds.Datastore) {
 	subs, err := topic.Subscribe()
 	if err != nil {
 		panic(err)
 	}
 
-	go func() {
+	go func(datastore ds.Datastore) {
 		defer subs.Cancel()
+
+		channelsMap := make(map[string]Channels)
 		for {
 			msg, err := subs.Next(context.Background())
 			if err != nil {
@@ -160,26 +267,27 @@ func listenConsensusTopic(topic *pubsub.Topic) {
 			}
 
 			if payload.Phase == 1 {
-				consumePhase1(payload, from)
+				// keep it outside goroutine for thread-safety of map
+				key := fmt.Sprintf("/%d/phase%d", payload.Block, payload.Phase)
+				channels := channelsFactory(channelsMap, key)
+
+				go func() {
+					consumePhase1(payload, from, datastore, channels)
+				}()
 			} else {
 				log.Fatalf("[ERROR] Unhandled phase value: %d (%d)\n", payload.Phase, payload.Block)
 			}
 		}
-	}()
+	}(datastore)
 }
 
-func InitConsensusLoop(node host.Host, validators []peer.ID, ps *pubsub.PubSub) {
+func InitConsensusLoop(node host.Host, validators []peer.ID, ps *pubsub.PubSub, datastore ds.Datastore) {
 	if includes := utils.IsValidator(node.ID(), validators); !includes {
 		// current node is not a validator
 		return
 	}
 
-	payloadValidator := func(ctx context.Context, pid peer.ID, msg *pubsub.Message) bool {
-		// NOTE: `pid` could be an intermediary or relaying node, not necessarily the original publisher
-		// unlike `msg.GetFrom()` which is the peer ID of the original publisher of the message
-		return payloadDataValidator(msg, validators)
-	}
-	err := ps.RegisterTopicValidator(consensusTopic, payloadValidator)
+	err := ps.RegisterTopicValidator(consensusTopic, payloadDataValidator)
 	if err != nil {
 		panic(err)
 	}
@@ -187,7 +295,7 @@ func InitConsensusLoop(node host.Host, validators []peer.ID, ps *pubsub.PubSub) 
 	if err != nil {
 		panic(err)
 	}
-	listenConsensusTopic(topic)
+	listenConsensusTopic(topic, datastore)
 
 	go func() {
 		_, initialDelayMsec := nextBlockInfo()
@@ -205,9 +313,11 @@ func InitConsensusLoop(node host.Host, validators []peer.ID, ps *pubsub.PubSub) 
 			if nextBlockNumber > 0 {
 				ticker := time.After(time.Duration(waitTimeMsec) * time.Millisecond)
 				entropy := utils.RandomHex(32)
-				payload := createPhase1Payload(nextBlockNumber, entropy)
+				data := createPhase1Payload(nextBlockNumber, entropy)
 				<-ticker
-				triggerPhase1(nextBlockNumber, payload, topic)
+				go func() {
+					triggerPhase1(nextBlockNumber, data, topic, validators, datastore)
+				}()
 			} else {
 				time.Sleep(time.Duration(waitTimeMsec) * time.Millisecond)
 			}

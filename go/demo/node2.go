@@ -112,7 +112,7 @@ func Node2() {
 
 	AdjustNetworkTime(node, validatorsList, true)
 
-	InitConsensusLoop(node, validatorsList, ps)
+	InitConsensusLoop(node, validatorsList, ps, datastore)
 
 	// ------------------
 

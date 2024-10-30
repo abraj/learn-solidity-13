@@ -8,6 +8,7 @@ import (
 
 const EPOCH_BASE_MS = 1640995200000 // 1 Jan 2022 00:00:00 UTC
 const SLOT_DURATION = 5000          // 5 sec
+const PHASE_DURATION = 2000         // 2 sec
 const MAX_INITIAL_CLOCK_SYNC = 1000 // 1 sec
 const MAX_CLOCK_DRIFT = 100         // 100 ms
 const MAX_LAG = 50                  // 50 ms
