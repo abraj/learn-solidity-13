@@ -8,6 +8,7 @@ import (
 	"libp2pdemo/utils"
 	"log"
 	"math/rand"
+	"sync"
 	"time"
 
 	ds "github.com/ipfs/go-datastore"
@@ -28,30 +29,41 @@ type Phase1Data struct {
 	Ciphertext string `json:"ciphertext"`
 }
 
+type Phase1Status struct {
+	PhaseCompleted int `json:"phase"`
+}
+
 type Channels struct {
-	quorum chan bool
+	mutex  *sync.Mutex
+	quorum chan int
 }
 
 const consensusTopic = "baadal-consensus"
 const consensusPrefix = "/consensus/block"
 
-func channelsFactory(channelsMap map[string]Channels, key string) Channels {
+func channelsFactory(key string, channelsMap map[string]Channels, datastore ds.Datastore) Channels {
 	if channelsMap[key].quorum == nil {
 		timer := time.NewTimer(shared.PHASE_DURATION * time.Millisecond)
-		quorum := make(chan bool)
+
+		// var mutex sync.Mutex
+		mutex := sync.Mutex{}
+		quorum := make(chan int)
 
 		// mutex not needed (since no parallel goroutines)
-		channelsMap[key] = Channels{quorum}
+		channelsMap[key] = Channels{mutex: &mutex, quorum: quorum}
 
 		go func() {
 			defer timer.Stop()
 			defer close(quorum)
 			select {
-			case <-quorum:
+			case block := <-quorum:
 				// quorum achieved
-				fmt.Println("triggerPhase2..")
+				go func() {
+					triggerPhase2(block, datastore)
+				}()
 			case <-timer.C:
 				// timeout
+				fmt.Println(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>> timeout")
 			}
 		}()
 	}
@@ -167,17 +179,28 @@ func triggerPhase1(nextBlockNumber int, data string, topic *pubsub.Topic, valida
 		return
 	}
 
+	statusKey := ds.NewKey(consensusPrefix + fmt.Sprintf("/%d/status", nextBlockNumber))
+	if err := datastore.Put(context.Background(), statusKey, []byte("{}")); err != nil {
+		log.Println(fmt.Sprintf("Error setting data for key: %s", statusKey), err)
+		return
+	}
+
 	err = topic.Publish(context.Background(), []byte(data))
 	if err != nil {
 		panic(err)
 	}
 }
 
+// phase2: reveal phase
+func triggerPhase2(block int, datastore ds.Datastore) {
+	fmt.Println("triggerPhase2..", block, datastore)
+}
+
 func consumePhase1(payload Phase1Payload, from peer.ID, datastore ds.Datastore, channels Channels) {
 	validatorsKey := ds.NewKey(consensusPrefix + fmt.Sprintf("/%d/validators", payload.Block))
 	validatorsList, err := datastore.Get(context.Background(), validatorsKey)
 	if err != nil {
-		// log.Println(fmt.Sprintf("Error getting data for key: %s", validatorsKey), err)
+		log.Println(fmt.Sprintf("Error getting data for key: %s", validatorsKey), err)
 		return
 	}
 	// validatorsListStr := string(validatorsList)
@@ -227,14 +250,50 @@ func consumePhase1(payload Phase1Payload, from peer.ID, datastore ds.Datastore, 
 		return
 	}
 
-	fmt.Println("<---- prefix:", len(validators), len(keys), prefix)
+	fmt.Println("<---- prefix:", len(validators), len(keys), prefix, from)
 	// fmt.Println("keys:", keys)
 	// fmt.Println("values:", values)
 
+	channels.mutex.Lock()
+
+	statusKey := ds.NewKey(consensusPrefix + fmt.Sprintf("/%d/status", payload.Block))
+	statusData, err := datastore.Get(context.Background(), statusKey)
+	if err != nil {
+		log.Println(fmt.Sprintf("Error getting data for key: %s", statusKey), err)
+		return
+	}
+
+	var statusObj Phase1Status
+	err = json.Unmarshal(statusData, &statusObj)
+	if err != nil {
+		log.Println("Error unmarshalling status data:", err)
+		return
+	}
+
+	if statusObj.PhaseCompleted >= 1 {
+		// log.Printf("Phase 1 already completed. Status: %d\n", statusObj.PhaseCompleted)
+		return
+	}
+
 	// quorum: 3/4 majority
 	if len(keys)*4 >= len(validators)*3 {
-		channels.quorum <- true
+		channels.quorum <- payload.Block
+		statusObj.PhaseCompleted = 1
+
+		statusData, err := json.Marshal(statusObj)
+		if err != nil {
+			log.Println("Error marshalling status data:", err)
+			return
+		}
+
+		statusKey := ds.NewKey(consensusPrefix + fmt.Sprintf("/%d/status", payload.Block))
+		if err := datastore.Put(context.Background(), statusKey, statusData); err != nil {
+			log.Println(fmt.Sprintf("Error putting value in datastore for key: %s", statusKey), err)
+			return
+		}
 	}
+
+	channels.mutex.Unlock()
 
 	// TODO: cleanup memory store, datastore, etc. for each /block-number
 }
@@ -269,7 +328,7 @@ func listenConsensusTopic(topic *pubsub.Topic, datastore ds.Datastore) {
 			if payload.Phase == 1 {
 				// keep it outside goroutine for thread-safety of map
 				key := fmt.Sprintf("/%d/phase%d", payload.Block, payload.Phase)
-				channels := channelsFactory(channelsMap, key)
+				channels := channelsFactory(key, channelsMap, datastore)
 
 				go func() {
 					consumePhase1(payload, from, datastore, channels)
