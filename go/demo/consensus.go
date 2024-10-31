@@ -27,6 +27,7 @@ type Phase1Payload struct {
 type Phase1Data struct {
 	Hash       string `json:"hash"`
 	Ciphertext string `json:"ciphertext"`
+	Delayed    bool   `json:"delayed"`
 }
 
 type Phase1Status struct {
@@ -196,6 +197,24 @@ func triggerPhase2(block int, datastore ds.Datastore) {
 	fmt.Println("triggerPhase2..", block, datastore)
 }
 
+func getStatusObj(block int, datastore ds.Datastore) (Phase1Status, error) {
+	statusKey := ds.NewKey(consensusPrefix + fmt.Sprintf("/%d/status", block))
+	statusData, err := datastore.Get(context.Background(), statusKey)
+	if err != nil {
+		log.Println(fmt.Sprintf("Error getting data for key: %s", statusKey), err)
+		return Phase1Status{}, err
+	}
+
+	var statusObj Phase1Status
+	err = json.Unmarshal(statusData, &statusObj)
+	if err != nil {
+		log.Println("Error unmarshalling status data:", err)
+		return Phase1Status{}, err
+	}
+
+	return statusObj, nil
+}
+
 func consumePhase1(payload Phase1Payload, from peer.ID, datastore ds.Datastore, channels Channels) {
 	validatorsKey := ds.NewKey(consensusPrefix + fmt.Sprintf("/%d/validators", payload.Block))
 	validatorsList, err := datastore.Get(context.Background(), validatorsKey)
@@ -229,13 +248,23 @@ func consumePhase1(payload Phase1Payload, from peer.ID, datastore ds.Datastore, 
 		return
 	}
 
-	data := Phase1Data{Hash: payload.Hash, Ciphertext: payload.Ciphertext}
+	channels.mutex.Lock()
+
+	statusObj, err := getStatusObj(payload.Block, datastore)
+	if err != nil {
+		return
+	}
+
+	phase1Completed := statusObj.PhaseCompleted >= 1
+
+	data := Phase1Data{Hash: payload.Hash, Ciphertext: payload.Ciphertext, Delayed: phase1Completed}
 	p1Data, err := json.Marshal(data)
 	if err != nil {
 		log.Println("Error marshalling JSON:", err)
 		return
 	}
 
+	// move below to avoid capturing laggard/delayed messages
 	p1DataStr := string(p1Data)
 	p1Key := ds.NewKey(consensusPrefix + fmt.Sprintf("/%d/phase%d/%s", payload.Block, payload.Phase, from))
 	if err := datastore.Put(context.Background(), p1Key, []byte(p1DataStr)); err != nil {
@@ -243,6 +272,13 @@ func consumePhase1(payload Phase1Payload, from peer.ID, datastore ds.Datastore, 
 		return
 	}
 
+	// move above to avoid capturing laggard/delayed messages
+	if phase1Completed {
+		// log.Printf("Phase 1 already completed. Status: %d\n", statusObj.PhaseCompleted)
+		return
+	}
+
+	// query data needed for quorum computation
 	prefix := consensusPrefix + fmt.Sprintf("/%d/phase%d", payload.Block, payload.Phase)
 	keys, _, err := QueryWithPrefix(datastore, prefix)
 	if err != nil {
@@ -253,27 +289,6 @@ func consumePhase1(payload Phase1Payload, from peer.ID, datastore ds.Datastore, 
 	fmt.Println("<---- prefix:", len(validators), len(keys), prefix, from)
 	// fmt.Println("keys:", keys)
 	// fmt.Println("values:", values)
-
-	channels.mutex.Lock()
-
-	statusKey := ds.NewKey(consensusPrefix + fmt.Sprintf("/%d/status", payload.Block))
-	statusData, err := datastore.Get(context.Background(), statusKey)
-	if err != nil {
-		log.Println(fmt.Sprintf("Error getting data for key: %s", statusKey), err)
-		return
-	}
-
-	var statusObj Phase1Status
-	err = json.Unmarshal(statusData, &statusObj)
-	if err != nil {
-		log.Println("Error unmarshalling status data:", err)
-		return
-	}
-
-	if statusObj.PhaseCompleted >= 1 {
-		// log.Printf("Phase 1 already completed. Status: %d\n", statusObj.PhaseCompleted)
-		return
-	}
 
 	// quorum: 3/4 majority
 	if len(keys)*4 >= len(validators)*3 {
