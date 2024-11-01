@@ -192,7 +192,7 @@ func triggerPhase1(nextBlockNumber int, data string, topic *pubsub.Topic, valida
 	}
 }
 
-// phase2: reveal phase
+// phase2: transition (commit-close) phase
 func triggerPhase2(block int, datastore ds.Datastore) {
 	fmt.Println("triggerPhase2..", block, datastore)
 }
@@ -290,11 +290,9 @@ func consumePhase1(payload Phase1Payload, from peer.ID, datastore ds.Datastore, 
 	// fmt.Println("keys:", keys)
 	// fmt.Println("values:", values)
 
-	// quorum: 3/4 majority
-	if len(keys)*4 >= len(validators)*3 {
-		channels.quorum <- payload.Block
+	// wait for 90th percentile response
+	if len(keys)*10 >= len(validators)*9 {
 		statusObj.PhaseCompleted = 1
-
 		statusData, err := json.Marshal(statusObj)
 		if err != nil {
 			log.Println("Error marshalling status data:", err)
@@ -306,6 +304,9 @@ func consumePhase1(payload Phase1Payload, from peer.ID, datastore ds.Datastore, 
 			log.Println(fmt.Sprintf("Error putting value in datastore for key: %s", statusKey), err)
 			return
 		}
+
+		// close phase1
+		channels.quorum <- payload.Block
 	}
 
 	channels.mutex.Unlock()
