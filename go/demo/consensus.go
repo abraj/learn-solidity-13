@@ -18,8 +18,9 @@ import (
 )
 
 type PhasePayload struct {
-	Block int `json:"block"`
-	Phase int `json:"phase"`
+	From  string `json:"from"`
+	Block int    `json:"block"`
+	Phase int    `json:"phase"`
 }
 
 type PhaseData struct {
@@ -27,6 +28,7 @@ type PhaseData struct {
 }
 
 type Phase1Payload struct {
+	From       string `json:"from"`
 	Block      int    `json:"block"`
 	Phase      int    `json:"phase"`
 	Hash       string `json:"hash"`
@@ -51,7 +53,7 @@ type Channels struct {
 const consensusTopic = "baadal-consensus"
 const consensusPrefix = "/consensus/block"
 
-func channelsFactory(key string, channelsMap map[string]Channels, topic *pubsub.Topic, onQuorum func(block int, topic *pubsub.Topic)) Channels {
+func channelsFactory(node host.Host, key string, channelsMap map[string]Channels, topic *pubsub.Topic, onQuorum func(node host.Host, block int, topic *pubsub.Topic)) Channels {
 	if channelsMap[key].quorum == nil {
 		timer := time.NewTimer(shared.PHASE_DURATION * time.Millisecond)
 
@@ -69,7 +71,7 @@ func channelsFactory(key string, channelsMap map[string]Channels, topic *pubsub.
 			case block := <-quorum:
 				// quorum achieved
 				go func() {
-					onQuorum(block, topic)
+					onQuorum(node, block, topic)
 				}()
 			case <-timer.C:
 				// timeout
@@ -82,10 +84,7 @@ func channelsFactory(key string, channelsMap map[string]Channels, topic *pubsub.
 
 // NOTE: The validator function is called while receiving (non-local) messages
 // as well as _sending_ messages.
-func payloadDataValidator(ctx context.Context, pid peer.ID, msg *pubsub.Message) bool {
-	// NOTE: `pid` could be an intermediary or relaying node, not necessarily the original publisher
-	// unlike `msg.GetFrom()` which is the peer ID of the original publisher of the message
-
+func payloadDataValidator(msg *pubsub.Message) bool {
 	if len(msg.Data) == 0 {
 		log.Println("[WARN] empty message")
 		return false
@@ -96,12 +95,17 @@ func payloadDataValidator(ctx context.Context, pid peer.ID, msg *pubsub.Message)
 	}
 
 	data := string(msg.Data)
-	// from := msg.GetFrom()
+	from := msg.GetFrom()
 
-	var payload Phase1Payload
+	var payload PhasePayload
 	err := json.Unmarshal([]byte(data), &payload)
 	if err != nil {
 		log.Println("Error unmarshalling JSON:", err)
+		return false
+	}
+
+	if from.String() != payload.From {
+		log.Printf("Unable to verify sender: %s %s\n", from, payload.From)
 		return false
 	}
 
@@ -143,7 +147,7 @@ func nextBlockInfo() (int, int) {
 	return nextBlockNumber, waitTimeMsec
 }
 
-func createPhase1Payload(blockNumber int, entropy string) string {
+func createPhase1Payload(node host.Host, blockNumber int, entropy string) string {
 	hash := utils.CreateSHA3Hash(entropy)
 
 	key := utils.RandomHex(32)
@@ -155,7 +159,8 @@ func createPhase1Payload(blockNumber int, entropy string) string {
 		panic(err)
 	}
 
-	payload := Phase1Payload{Block: blockNumber, Phase: 1, Hash: hash, Ciphertext: ciphertext}
+	from := node.ID().String()
+	payload := Phase1Payload{From: from, Block: blockNumber, Phase: 1, Hash: hash, Ciphertext: ciphertext}
 	payloadData, err := json.Marshal(payload)
 	if err != nil {
 		panic(err)
@@ -165,8 +170,9 @@ func createPhase1Payload(blockNumber int, entropy string) string {
 	return payloadStr
 }
 
-func createPhase2Payload(blockNumber int) string {
-	payload := PhasePayload{Block: blockNumber, Phase: 2}
+func createPhase2Payload(node host.Host, blockNumber int) string {
+	from := node.ID().String()
+	payload := PhasePayload{From: from, Block: blockNumber, Phase: 2}
 	payloadData, err := json.Marshal(payload)
 	if err != nil {
 		panic(err)
@@ -208,23 +214,25 @@ func triggerPhase1(nextBlockNumber int, data string, topic *pubsub.Topic, valida
 
 	err = topic.Publish(context.Background(), []byte(data))
 	if err != nil {
-		panic(err)
+		log.Printf("Could not publish invalid message: %v\n", err)
+		// panic(err)
 	}
 }
 
 // phase2: transition (commit-close) phase
-func triggerPhase2(block int, topic *pubsub.Topic) {
+func triggerPhase2(node host.Host, block int, topic *pubsub.Topic) {
 	fmt.Println("triggerPhase2..", block)
 
-	data := createPhase2Payload(block)
+	data := createPhase2Payload(node, block)
 	err := topic.Publish(context.Background(), []byte(data))
 	if err != nil {
-		log.Fatalf("Could not publish invalid message: %v\n", err)
+		log.Printf("Could not publish invalid message: %v\n", err)
+		// panic(err)
 	}
 }
 
 // phase3: reveal phase
-func triggerPhase3(block int, topic *pubsub.Topic) {
+func triggerPhase3(node host.Host, block int, topic *pubsub.Topic) {
 	fmt.Println("triggerPhase3..", block)
 }
 
@@ -266,7 +274,7 @@ func getValidatorsFromStore(payload PhasePayload, datastore ds.Datastore) ([]pee
 }
 
 func consumePhase1(payload Phase1Payload, from peer.ID, datastore ds.Datastore, channels Channels) {
-	_payload := PhasePayload{Block: payload.Block, Phase: payload.Block}
+	_payload := PhasePayload{From: payload.From, Block: payload.Block, Phase: payload.Block}
 	validators, err := getValidatorsFromStore(_payload, datastore)
 	if err != nil {
 		return
@@ -445,7 +453,7 @@ func consumePhase2(payload PhasePayload, from peer.ID, datastore ds.Datastore, c
 	channels.mutex.Unlock()
 }
 
-func listenConsensusTopic(topic *pubsub.Topic, datastore ds.Datastore) {
+func listenConsensusTopic(node host.Host, topic *pubsub.Topic, datastore ds.Datastore) {
 	subs, err := topic.Subscribe()
 	if err != nil {
 		panic(err)
@@ -482,7 +490,7 @@ func listenConsensusTopic(topic *pubsub.Topic, datastore ds.Datastore) {
 
 				// keep it outside goroutine for thread-safety of map
 				key := fmt.Sprintf("/%d/phase%d", payload.Block, payload.Phase)
-				channels := channelsFactory(key, channelsMap, topic, triggerPhase2)
+				channels := channelsFactory(node, key, channelsMap, topic, triggerPhase2)
 
 				go func() {
 					consumePhase1(payload, from, datastore, channels)
@@ -490,7 +498,7 @@ func listenConsensusTopic(topic *pubsub.Topic, datastore ds.Datastore) {
 			} else if _payload.Phase == 2 {
 				// keep it outside goroutine for thread-safety of map
 				key := fmt.Sprintf("/%d/phase%d", _payload.Block, _payload.Phase)
-				channels := channelsFactory(key, channelsMap, topic, triggerPhase3)
+				channels := channelsFactory(node, key, channelsMap, topic, triggerPhase3)
 
 				go func() {
 					consumePhase2(_payload, from, datastore, channels)
@@ -508,7 +516,12 @@ func InitConsensusLoop(node host.Host, validators []peer.ID, ps *pubsub.PubSub, 
 		return
 	}
 
-	err := ps.RegisterTopicValidator(consensusTopic, payloadDataValidator)
+	payloadValidator := func(ctx context.Context, pid peer.ID, msg *pubsub.Message) bool {
+		// NOTE: `pid` could be an intermediary or relaying node, not necessarily the original publisher
+		// unlike `msg.GetFrom()` which is the peer ID of the original publisher of the message
+		return payloadDataValidator(msg)
+	}
+	err := ps.RegisterTopicValidator(consensusTopic, payloadValidator)
 	if err != nil {
 		panic(err)
 	}
@@ -516,7 +529,7 @@ func InitConsensusLoop(node host.Host, validators []peer.ID, ps *pubsub.PubSub, 
 	if err != nil {
 		panic(err)
 	}
-	listenConsensusTopic(topic, datastore)
+	listenConsensusTopic(node, topic, datastore)
 
 	go func() {
 		_, initialDelayMsec := nextBlockInfo()
@@ -534,7 +547,7 @@ func InitConsensusLoop(node host.Host, validators []peer.ID, ps *pubsub.PubSub, 
 			if nextBlockNumber > 0 {
 				ticker := time.After(time.Duration(waitTimeMsec) * time.Millisecond)
 				entropy := utils.RandomHex(32)
-				data := createPhase1Payload(nextBlockNumber, entropy)
+				data := createPhase1Payload(node, nextBlockNumber, entropy)
 				<-ticker
 				go func() {
 					triggerPhase1(nextBlockNumber, data, topic, validators, datastore)
