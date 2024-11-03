@@ -8,6 +8,7 @@ import (
 	"libp2pdemo/utils"
 	"log"
 	"math/rand"
+	"sort"
 	"sync"
 	"time"
 
@@ -45,9 +46,16 @@ type Phase4Payload struct {
 	View  string `json:"view"`
 }
 
+type Phase5Payload struct {
+	From  string `json:"from"`
+	Block int    `json:"block"`
+	Phase int    `json:"phase"`
+	View  string `json:"view"`
+}
+
 type PhaseData struct {
-	From    string `json:"from"`
-	Delayed bool   `json:"delayed"`
+	From string `json:"from"`
+	// Delayed bool   `json:"delayed"`
 }
 
 type Phase1Data struct {
@@ -60,13 +68,18 @@ type Phase1Data struct {
 type Phase3Data struct {
 	From    string `json:"from"`
 	Entropy string `json:"entropy"`
-	Delayed bool   `json:"delayed"`
+	// Delayed bool   `json:"delayed"`
 }
 
 type Phase4Data struct {
-	From    string `json:"from"`
-	View    string `json:"view"`
-	Delayed bool   `json:"delayed"`
+	From string `json:"from"`
+	View string `json:"view"`
+	// Delayed bool   `json:"delayed"`
+}
+
+type Phase5Data struct {
+	From string `json:"from"`
+	View string `json:"view"`
 }
 
 type PhaseStatus struct {
@@ -146,7 +159,7 @@ func payloadDataValidator(msg *pubsub.Message) bool {
 		return false
 	}
 
-	if payload.Phase != 1 && payload.Phase != 2 && payload.Phase != 3 && payload.Phase != 4 {
+	if payload.Phase != 1 && payload.Phase != 2 && payload.Phase != 3 && payload.Phase != 4 && payload.Phase != 5 {
 		log.Printf("Invalid phase value: %d (%d)\n", payload.Phase, payload.Block)
 		return false
 	}
@@ -264,6 +277,139 @@ func createPhase4Payload(node host.Host, blockNumber int, datastore ds.Datastore
 	return payloadStr
 }
 
+func createPhase5Payload(node host.Host, blockNumber int, datastore ds.Datastore) string {
+	validators, err := getValidatorsFromStore(blockNumber, datastore)
+	if err != nil {
+		return ""
+	}
+
+	voteMap := make(map[string]int, len(validators))
+	partisanMap := make(map[string]bool, len(validators))
+	for _, validator := range validators {
+		voteMap[validator.String()] = 0
+		partisanMap[validator.String()] = false
+	}
+
+	partisanMap[node.ID().String()] = true
+
+	// handle tally for current node
+	{
+		prefix := consensusPrefix + fmt.Sprintf("/%d/phase3", blockNumber)
+		_, values, err := QueryWithPrefix(datastore, prefix)
+		if err != nil {
+			log.Println(fmt.Sprintf("Error querying datastore with prefix: %s", prefix), err)
+			return ""
+		}
+
+		viewItems := []string{}
+		for _, value := range values {
+			var p3Obj Phase3Data
+			err := json.Unmarshal([]byte(value), &p3Obj)
+			if err != nil {
+				log.Println("Error unmarshalling value JSON:", err)
+				return ""
+			}
+			viewItems = append(viewItems, p3Obj.From)
+		}
+
+		var mu sync.Mutex
+		for _, item := range viewItems {
+			mu.Lock()
+			value, ok := partisanMap[item]
+			if ok {
+				if !value {
+					partisanMap[item] = true
+				}
+			} else {
+				fmt.Printf("[WARN] item not in validator list: %s\n", item)
+			}
+			mu.Unlock()
+		}
+	}
+
+	// aggregate votes: handle tally from incoming messages
+	{
+		prefix := consensusPrefix + fmt.Sprintf("/%d/phase4", blockNumber)
+		_, values, err := QueryWithPrefix(datastore, prefix)
+		if err != nil {
+			log.Println(fmt.Sprintf("Error querying datastore with prefix: %s", prefix), err)
+			return ""
+		}
+
+		for _, value := range values {
+			var p4Obj Phase4Data
+			err := json.Unmarshal([]byte(value), &p4Obj)
+			if err != nil {
+				log.Println("Error unmarshalling value JSON:", err)
+				continue
+			}
+
+			viewStr := p4Obj.View
+			viewItems := make([]string, 0)
+			err = json.Unmarshal([]byte(viewStr), &viewItems)
+			if err != nil {
+				fmt.Printf("Unable to unmarshall view: %v\n", err)
+				continue
+			}
+
+			var mu sync.Mutex
+			for _, item := range viewItems {
+				mu.Lock()
+				value, ok := voteMap[item]
+				if ok {
+					voteMap[item] = value + 1
+				} else {
+					fmt.Printf("[WARN] item not in validator list: %s\n", item)
+				}
+				mu.Unlock()
+			}
+		}
+	}
+
+	var mu sync.Mutex
+	for _, validator := range validators {
+		item := validator.String()
+		value, ok := voteMap[item]
+		// quorum: 2/3 majority
+		if ok && value*3 >= len(validators)*2 {
+			mu.Lock()
+			curr, ok2 := partisanMap[item]
+			if ok2 && !curr {
+				// NOTE: (entropy for) these items (suggested by other nodes) are not verified as of now
+				// Needs to be verified (locally) after phase5 response
+				partisanMap[item] = true
+			}
+			mu.Unlock()
+		}
+	}
+
+	viewItems := []string{}
+	for key, value := range partisanMap {
+		if value {
+			viewItems = append(viewItems, key)
+		}
+	}
+
+	// sort values
+	sort.Strings(viewItems)
+
+	view, err := json.Marshal(viewItems)
+	if err != nil {
+		log.Println("Error marshalling view list:", err)
+		return ""
+	}
+
+	from := node.ID().String()
+	payload := Phase5Payload{From: from, Block: blockNumber, Phase: 5, View: string(view)}
+	payloadData, err := json.Marshal(payload)
+	if err != nil {
+		panic(err)
+	}
+
+	payloadStr := string(payloadData)
+	return payloadStr
+}
+
 // phase1: commit phase
 func triggerPhase1(entropy string, nextBlockNumber int, data string, topic *pubsub.Topic, validators []peer.ID, datastore ds.Datastore) {
 	shared.SetLatestBlockNumber(nextBlockNumber)
@@ -356,6 +502,22 @@ func triggerPhase4(block int, node host.Host, topic *pubsub.Topic, datastore ds.
 // phase5: full-tally phase
 func triggerPhase5(block int, node host.Host, topic *pubsub.Topic, datastore ds.Datastore) {
 	fmt.Println("triggerPhase5..", block)
+
+	data := createPhase5Payload(node, block, datastore)
+	if data == "" {
+		return
+	}
+
+	err := topic.Publish(context.Background(), []byte(data))
+	if err != nil {
+		log.Printf("Could not publish invalid message: %v\n", err)
+		// panic(err)
+	}
+}
+
+// phase6: VDF delay phase
+func triggerPhase6(block int, node host.Host, topic *pubsub.Topic, datastore ds.Datastore) {
+	fmt.Println("triggerPhase6..", block)
 }
 
 func getStatusObj(block int, datastore ds.Datastore) (PhaseStatus, error) {
@@ -392,8 +554,8 @@ func setStatusObj(statusObj PhaseStatus, block int, datastore ds.Datastore) erro
 	return nil
 }
 
-func getValidatorsFromStore(payload PhasePayload, datastore ds.Datastore) ([]peer.ID, error) {
-	validatorsKey := ds.NewKey(consensusPrefix + fmt.Sprintf("/%d/validators", payload.Block))
+func getValidatorsFromStore(block int, datastore ds.Datastore) ([]peer.ID, error) {
+	validatorsKey := ds.NewKey(consensusPrefix + fmt.Sprintf("/%d/validators", block))
 	validatorsList, err := datastore.Get(context.Background(), validatorsKey)
 	if err != nil {
 		log.Println(fmt.Sprintf("Error getting data for key: %s", validatorsKey), err)
@@ -412,8 +574,7 @@ func getValidatorsFromStore(payload PhasePayload, datastore ds.Datastore) ([]pee
 }
 
 func consumePhase1(payload Phase1Payload, from peer.ID, datastore ds.Datastore, channels Channels) {
-	_payload := PhasePayload{From: payload.From, Block: payload.Block, Phase: payload.Block}
-	validators, err := getValidatorsFromStore(_payload, datastore)
+	validators, err := getValidatorsFromStore(payload.Block, datastore)
 	if err != nil {
 		return
 	}
@@ -462,7 +623,7 @@ func consumePhase1(payload Phase1Payload, from peer.ID, datastore ds.Datastore, 
 
 	// move above to avoid capturing laggard/delayed messages
 	if phase1Completed {
-		// log.Printf("Phase 1 already completed. Status: %d\n", statusObj.PhaseCompleted)
+		log.Printf("Phase 1 already completed. Status: %d\n", statusObj.PhaseCompleted)
 		return
 	}
 
@@ -494,7 +655,7 @@ func consumePhase1(payload Phase1Payload, from peer.ID, datastore ds.Datastore, 
 }
 
 func consumePhase2(payload PhasePayload, from peer.ID, datastore ds.Datastore, channels Channels) {
-	validators, err := getValidatorsFromStore(payload, datastore)
+	validators, err := getValidatorsFromStore(payload.Block, datastore)
 	if err != nil {
 		return
 	}
@@ -515,7 +676,7 @@ func consumePhase2(payload PhasePayload, from peer.ID, datastore ds.Datastore, c
 	phase2Completed := statusObj.PhaseCompleted >= 2
 
 	if phase2Completed {
-		// log.Printf("Phase 2 already completed. Status: %d\n", statusObj.PhaseCompleted)
+		log.Printf("Phase 2 already completed. Status: %d\n", statusObj.PhaseCompleted)
 		return
 	}
 
@@ -534,18 +695,20 @@ func consumePhase2(payload PhasePayload, from peer.ID, datastore ds.Datastore, c
 		return
 	}
 
+	// only consider if part of phase1 cut-off
 	if p1Msg.Delayed {
 		return
 	}
 
-	data := PhaseData{From: payload.From, Delayed: phase2Completed}
+	data := PhaseData{From: payload.From /*, Delayed: phase2Completed*/}
 	p2Data, err := json.Marshal(data)
 	if err != nil {
 		log.Println("Error marshalling JSON:", err)
 		return
 	}
 
-	// NOTE: currently, only valid {Delayed: false} (and already committed) phase2 messages are being stored
+	// NOTE: currently, only valid (part of phase1 cut-off and already committed) phase2 messages are being stored
+	// Also, stop storing messages as soon as (phase2) cut-off is reached
 	p2Key := ds.NewKey(consensusPrefix + fmt.Sprintf("/%d/phase%d/%s", payload.Block, payload.Phase, from))
 	if err := datastore.Put(context.Background(), p2Key, p2Data); err != nil {
 		log.Println(fmt.Sprintf("Error putting value in datastore for key: %s", p2Key), err)
@@ -576,8 +739,7 @@ func consumePhase2(payload PhasePayload, from peer.ID, datastore ds.Datastore, c
 }
 
 func consumePhase3(payload Phase3Payload, from peer.ID, datastore ds.Datastore, channels Channels) {
-	_payload := PhasePayload{From: payload.From, Block: payload.Block, Phase: payload.Block}
-	validators, err := getValidatorsFromStore(_payload, datastore)
+	validators, err := getValidatorsFromStore(payload.Block, datastore)
 	if err != nil {
 		return
 	}
@@ -630,7 +792,7 @@ func consumePhase3(payload Phase3Payload, from peer.ID, datastore ds.Datastore, 
 		return
 	}
 
-	data := Phase3Data{From: payload.From, Entropy: payload.Entropy, Delayed: phase3Completed}
+	data := Phase3Data{From: payload.From, Entropy: payload.Entropy /*, Delayed: phase3Completed*/}
 	p3Data, err := json.Marshal(data)
 	if err != nil {
 		log.Println("Error marshalling JSON:", err)
@@ -647,6 +809,7 @@ func consumePhase3(payload Phase3Payload, from peer.ID, datastore ds.Datastore, 
 	}
 
 	if phase3Completed {
+		log.Printf("Phase 3 already completed. Status: %d\n", statusObj.PhaseCompleted)
 		return
 	}
 
@@ -674,8 +837,7 @@ func consumePhase3(payload Phase3Payload, from peer.ID, datastore ds.Datastore, 
 }
 
 func consumePhase4(payload Phase4Payload, from peer.ID, datastore ds.Datastore, channels Channels) {
-	_payload := PhasePayload{From: payload.From, Block: payload.Block, Phase: payload.Block}
-	validators, err := getValidatorsFromStore(_payload, datastore)
+	validators, err := getValidatorsFromStore(payload.Block, datastore)
 	if err != nil {
 		return
 	}
@@ -695,7 +857,7 @@ func consumePhase4(payload Phase4Payload, from peer.ID, datastore ds.Datastore, 
 
 	phase4Completed := statusObj.PhaseCompleted >= 4
 
-	data := Phase4Data{From: payload.From, View: payload.View, Delayed: phase4Completed}
+	data := Phase4Data{From: payload.From, View: payload.View /*, Delayed: phase4Completed*/}
 	p4Data, err := json.Marshal(data)
 	if err != nil {
 		log.Println("Error marshalling JSON:", err)
@@ -711,6 +873,7 @@ func consumePhase4(payload Phase4Payload, from peer.ID, datastore ds.Datastore, 
 	}
 
 	if phase4Completed {
+		log.Printf("Phase 4 already completed. Status: %d\n", statusObj.PhaseCompleted)
 		return
 	}
 
@@ -733,6 +896,70 @@ func consumePhase4(payload Phase4Payload, from peer.ID, datastore ds.Datastore, 
 		}
 
 		// close phase4
+		channels.quorum <- payload.Block
+	}
+}
+
+func consumePhase5(payload Phase5Payload, from peer.ID, datastore ds.Datastore, channels Channels) {
+	validators, err := getValidatorsFromStore(payload.Block, datastore)
+	if err != nil {
+		return
+	}
+
+	if includes := utils.IsValidator(from, validators); !includes {
+		log.Printf("[WARN] Invalid validator: %s\n", from)
+		return
+	}
+
+	channels.mutex.Lock()
+	defer channels.mutex.Unlock()
+
+	statusObj, err := getStatusObj(payload.Block, datastore)
+	if err != nil {
+		return
+	}
+
+	phase5Completed := statusObj.PhaseCompleted >= 5
+
+	data := Phase5Data{From: payload.From, View: payload.View}
+	p5Data, err := json.Marshal(data)
+	if err != nil {
+		log.Println("Error marshalling JSON:", err)
+		return
+	}
+
+	// NOTE: keep storing phase5 messages
+	p5DataStr := string(p5Data)
+	p5Key := ds.NewKey(consensusPrefix + fmt.Sprintf("/%d/phase%d/%s", payload.Block, payload.Phase, from))
+	if err := datastore.Put(context.Background(), p5Key, []byte(p5DataStr)); err != nil {
+		log.Println(fmt.Sprintf("Error putting value in datastore for key: %s", p5Key), err)
+		return
+	}
+
+	if phase5Completed {
+		log.Printf("Phase 5 already completed. Status: %d\n", statusObj.PhaseCompleted)
+		return
+	}
+
+	// query data needed for deciding progress
+	prefix := consensusPrefix + fmt.Sprintf("/%d/phase%d", payload.Block, payload.Phase)
+	keys, _, err := QueryWithPrefix(datastore, prefix)
+	if err != nil {
+		log.Println(fmt.Sprintf("Error querying datastore with prefix: %s", prefix), err)
+		return
+	}
+
+	fmt.Println("<---- prefix:", len(validators), len(keys), prefix, from)
+
+	// wait for all responses
+	if len(keys) == len(validators) {
+		statusObj.PhaseCompleted = 5
+		err := setStatusObj(statusObj, payload.Block, datastore)
+		if err != nil {
+			return
+		}
+
+		// close phase5
 		channels.quorum <- payload.Block
 	}
 }
@@ -824,6 +1051,23 @@ func listenConsensusTopic(node host.Host, topic *pubsub.Topic, datastore ds.Data
 
 				go func() {
 					consumePhase4(payload, from, datastore, channels)
+				}()
+			} else if _payload.Phase == 5 {
+				var payload Phase5Payload
+				err := json.Unmarshal([]byte(data), &payload)
+				if err != nil {
+					log.Println("Error unmarshalling JSON:", err)
+					return
+				}
+
+				// keep it outside goroutine for thread-safety of map
+				key := fmt.Sprintf("/%d/phase%d", payload.Block, payload.Phase)
+				channels := channelsFactory(key, channelsMap, func(block int) {
+					triggerPhase6(block, node, topic, datastore)
+				})
+
+				go func() {
+					consumePhase5(payload, from, datastore, channels)
 				}()
 			} else {
 				log.Fatalf("[ERROR] Unhandled phase value: %d (%d)\n", _payload.Phase, _payload.Block)
