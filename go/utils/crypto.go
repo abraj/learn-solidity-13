@@ -117,3 +117,27 @@ func DecryptAES256CBC(keyStr, ivStr, ciphertextHex string) (string, error) {
 
 	return string(unpaddedPlaintext), nil
 }
+
+// func Test() {
+// 	randHex := randomHex(32)
+// 	fmt.Println("randHex:", randHex)
+
+// 	hashValue := createSHA3Hash(randHex)
+// 	fmt.Println("hash:", hashValue)
+
+// 	key := randomHex(32)
+// 	iv := randomHex(16)
+
+// 	message := randHex
+// 	ciphertext, err := encryptAES256CBC(key, iv, message)
+// 	if err != nil {
+// 		panic(err)
+// 	}
+// 	fmt.Println("ciphertext:", ciphertext)
+
+// 	plaintext, err := decryptAES256CBC(key, iv, ciphertext)
+// 	if err != nil {
+// 		panic(err)
+// 	}
+// 	fmt.Println("randHex:", plaintext)
+// }
