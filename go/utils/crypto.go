@@ -118,6 +118,35 @@ func DecryptAES256CBC(keyStr, ivStr, ciphertextHex string) (string, error) {
 	return string(unpaddedPlaintext), nil
 }
 
+func MerkleHash(list []string) string {
+	if len(list) == 0 {
+		return ""
+	}
+
+	curr_level := []string{}
+	for _, item := range list {
+		hash := CreateSHA3Hash(item)
+		curr_level = append(curr_level, hash)
+	}
+
+	for len(curr_level) > 1 {
+		next_level := []string{}
+		for i := 0; i < len(curr_level); i += 2 {
+			var data string
+			if i+1 < len(curr_level) {
+				data = curr_level[i] + curr_level[i+1]
+			} else {
+				data = curr_level[i] + curr_level[i] // duplicate last node
+			}
+			hash := CreateSHA3Hash(data)
+			next_level = append(next_level, hash)
+		}
+		curr_level = next_level
+	}
+
+	return curr_level[0]
+}
+
 // func Test() {
 // 	randHex := randomHex(32)
 // 	fmt.Println("randHex:", randHex)

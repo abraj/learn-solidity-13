@@ -3,6 +3,7 @@ module libp2pdemo
 go 1.23.2
 
 require (
+	github.com/abraj/vdf v0.2.5
 	github.com/hsanjuan/ipfs-lite v1.8.2
 	github.com/ipfs/boxo v0.22.0
 	github.com/ipfs/go-datastore v0.6.0

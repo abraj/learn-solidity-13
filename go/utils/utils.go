@@ -7,7 +7,15 @@ import (
 	"github.com/libp2p/go-libp2p/core/peer"
 )
 
-func Contains(slice []string, item string) bool {
+type IntOrString interface {
+	~int | ~string
+}
+
+type IntOrInt64 interface {
+	~int | ~int64
+}
+
+func Contains[T IntOrString](slice []T, item T) bool {
 	for _, v := range slice {
 		if v == item {
 			return true
@@ -76,7 +84,17 @@ func ExpBackOff(fn func(), initialInterval time.Duration, finalInterval time.Dur
 	return done // Return the channel to stop the interval
 }
 
-func Median(values []int64) int64 {
+func MaxInt[T IntOrInt64](nums ...T) T {
+	maxVal := nums[0]
+	for _, num := range nums {
+		if num > maxVal {
+			maxVal = num
+		}
+	}
+	return maxVal
+}
+
+func Median[T IntOrInt64](values []T) T {
 	n := len(values)
 	if n == 0 {
 		return 0 // Return 0 or an error for an empty slice
@@ -99,4 +117,33 @@ func Median(values []int64) int64 {
 		// return float64(mid1+mid2) / 2
 		return (mid1 + mid2) / 2 // integer division
 	}
+}
+
+// Map function applies a transformation function to each element in a slice
+func Map[T any, U any](input []T, transform func(T) U) []U {
+	result := make([]U, len(input))
+	for i, v := range input {
+		result[i] = transform(v)
+	}
+	return result
+}
+
+// Filter function applies a predicate to each element and retains those that match
+func Filter[T any](input []T, predicate func(T) bool) []T {
+	result := []T{}
+	for _, v := range input {
+		if predicate(v) {
+			result = append(result, v)
+		}
+	}
+	return result
+}
+
+// Reduce function combines elements into a single value
+func Reduce[T any, U any](input []T, initial U, reducer func(U, T) U) U {
+	result := initial
+	for _, v := range input {
+		result = reducer(result, v)
+	}
+	return result
 }
