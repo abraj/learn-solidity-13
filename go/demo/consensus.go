@@ -9,7 +9,6 @@ import (
 	"log"
 	"math/big"
 	"math/rand"
-	"sort"
 	"strconv"
 	"sync"
 	"time"
@@ -457,9 +456,6 @@ func createPhase5Payload(node host.Host, blockNumber int, datastore ds.Datastore
 		}
 	}
 
-	// sort values
-	sort.Strings(viewItems)
-
 	view, err := json.Marshal(viewItems)
 	if err != nil {
 		log.Println("Error marshalling view list:", err)
@@ -584,9 +580,6 @@ func createPhase6Payload(node host.Host, blockNumber int, datastore ds.Datastore
 	consensusList := make([]string, len(consensusObj.InFavor))
 	copy(consensusList, consensusObj.InFavor)
 
-	// sort values
-	sort.Strings(consensusList)
-
 	composedHash := ""
 	for _, item := range consensusList {
 		composedHash = utils.CreateSHA3Hash(composedHash + hashMap[item].entropy)
@@ -624,8 +617,40 @@ func createPhase6Payload(node host.Host, blockNumber int, datastore ds.Datastore
 	return payloadStr
 }
 
+func initBlockData(blockNumber int, datastore ds.Datastore) []peer.ID {
+	validators := GetValidatorsList()
+	validatorsList, err := json.Marshal(validators)
+	if err != nil {
+		log.Println("Error marshalling validators list:", err)
+		return nil
+	}
+	validatorsListStr := string(validatorsList)
+
+	validatorsKey := ds.NewKey(consensusPrefix + fmt.Sprintf("/%d/validators", blockNumber))
+	if err := datastore.Put(context.Background(), validatorsKey, []byte(validatorsListStr)); err != nil {
+		log.Println(fmt.Sprintf("Error setting data for key: %s", validatorsKey), err)
+		return nil
+	}
+
+	votesObjStr, _ := json.Marshal(Votes{Votes: 0, VoteMap: "{}", ElapsedMap: "{}"})
+	votesKey := ds.NewKey(consensusPrefix + fmt.Sprintf("/%d/votes", blockNumber))
+	if err := datastore.Put(context.Background(), votesKey, []byte(votesObjStr)); err != nil {
+		log.Println(fmt.Sprintf("Error setting data for key: %s", votesKey), err)
+		return nil
+	}
+
+	rvotesObjStr, _ := json.Marshal(RandaoVotes{Votes: 0, EntropyVotes: map[string]int{}, EntropyMap: map[string]string{}})
+	rvotesKey := ds.NewKey(consensusPrefix + fmt.Sprintf("/%d/randao-votes", blockNumber))
+	if err := datastore.Put(context.Background(), rvotesKey, []byte(rvotesObjStr)); err != nil {
+		log.Println(fmt.Sprintf("Error setting data for key: %s", rvotesKey), err)
+		return nil
+	}
+
+	return validators
+}
+
 // phase1: commit phase
-func triggerPhase1(entropy string, nextBlockNumber int, data string, topic *pubsub.Topic, validators []peer.ID, datastore ds.Datastore) {
+func triggerPhase1(entropy string, nextBlockNumber int, data string, topic *pubsub.Topic, datastore ds.Datastore) {
 	shared.SetLatestBlockNumber(nextBlockNumber)
 
 	// var payload Phase1Payload
@@ -635,34 +660,12 @@ func triggerPhase1(entropy string, nextBlockNumber int, data string, topic *pubs
 	// 	return
 	// }
 
-	validatorsList, err := json.Marshal(validators)
+	statusObj, err := getStatusObj(nextBlockNumber, datastore)
 	if err != nil {
-		log.Println("Error marshalling validators list:", err)
-		return
-	}
-	validatorsListStr := string(validatorsList)
-
-	validatorsKey := ds.NewKey(consensusPrefix + fmt.Sprintf("/%d/validators", nextBlockNumber))
-	if err := datastore.Put(context.Background(), validatorsKey, []byte(validatorsListStr)); err != nil {
-		log.Println(fmt.Sprintf("Error setting data for key: %s", validatorsKey), err)
 		return
 	}
 
-	votesObjStr, _ := json.Marshal(Votes{Votes: 0, VoteMap: "{}", ElapsedMap: "{}"})
-	votesKey := ds.NewKey(consensusPrefix + fmt.Sprintf("/%d/votes", nextBlockNumber))
-	if err := datastore.Put(context.Background(), votesKey, []byte(votesObjStr)); err != nil {
-		log.Println(fmt.Sprintf("Error setting data for key: %s", votesKey), err)
-		return
-	}
-
-	rvotesObjStr, _ := json.Marshal(RandaoVotes{Votes: 0, EntropyVotes: map[string]int{}, EntropyMap: map[string]string{}})
-	rvotesKey := ds.NewKey(consensusPrefix + fmt.Sprintf("/%d/randao-votes", nextBlockNumber))
-	if err := datastore.Put(context.Background(), rvotesKey, []byte(rvotesObjStr)); err != nil {
-		log.Println(fmt.Sprintf("Error setting data for key: %s", rvotesKey), err)
-		return
-	}
-
-	statusObj := PhaseStatus{Entropy: entropy, PhaseCompleted: 0}
+	statusObj.Entropy = entropy
 	err = setStatusObj(statusObj, nextBlockNumber, datastore)
 	if err != nil {
 		return
@@ -768,14 +771,19 @@ func randaoConsensus(block int, datastore ds.Datastore) {
 	var consensusObj ConsensusObj
 	json.Unmarshal(consensusData, &consensusObj)
 
-	randValue := consensusObj.RandValue
-	fmt.Println("randValue:", randValue)
+	randaoMix := consensusObj.RandValue
+	// fmt.Println("InFavor:", consensusObj.InFavor)
+	fmt.Println("randaoMix:", randaoMix)
 }
 
 func getStatusObj(block int, datastore ds.Datastore) (PhaseStatus, error) {
 	statusKey := ds.NewKey(consensusPrefix + fmt.Sprintf("/%d/status", block))
 	statusData, err := datastore.Get(context.Background(), statusKey)
 	if err != nil {
+		statusObj := PhaseStatus{PhaseCompleted: 0}
+		if err := setStatusObj(statusObj, block, datastore); err == nil {
+			return statusObj, nil
+		}
 		log.Println(fmt.Sprintf("Error getting data for key: %s", statusKey), err)
 		return PhaseStatus{}, err
 	}
@@ -810,6 +818,10 @@ func getValidatorsFromStore(block int, datastore ds.Datastore) ([]peer.ID, error
 	validatorsKey := ds.NewKey(consensusPrefix + fmt.Sprintf("/%d/validators", block))
 	validatorsList, err := datastore.Get(context.Background(), validatorsKey)
 	if err != nil {
+		validators := initBlockData(block, datastore)
+		if len(validators) > 0 {
+			return validators, nil
+		}
 		log.Println(fmt.Sprintf("Error getting data for key: %s", validatorsKey), err)
 		return nil, err
 	}
@@ -825,7 +837,7 @@ func getValidatorsFromStore(block int, datastore ds.Datastore) ([]peer.ID, error
 	return validators, nil
 }
 
-func consumePhase1(payload Phase1Payload, from peer.ID, datastore ds.Datastore, channels Channels, conds Conds) {
+func consumePhase1(node host.Host, payload Phase1Payload, from peer.ID, datastore ds.Datastore, channels Channels, conds Conds) {
 	validators, err := getValidatorsFromStore(payload.Block, datastore)
 	if err != nil {
 		return
@@ -882,7 +894,7 @@ func consumePhase1(payload Phase1Payload, from peer.ID, datastore ds.Datastore, 
 
 	// move above to avoid capturing laggard/delayed messages
 	if phase1Completed {
-		log.Printf("Phase 1 already completed. Status: %d\n", statusObj.PhaseCompleted)
+		// log.Printf("Phase 1 already completed. Status: %d\n", statusObj.PhaseCompleted)
 		return
 	}
 
@@ -894,12 +906,18 @@ func consumePhase1(payload Phase1Payload, from peer.ID, datastore ds.Datastore, 
 		return
 	}
 
+	allKeys := utils.Map(keys, func(key ds.Key) string {
+		return key.String()
+	})
+	hostKey := consensusPrefix + fmt.Sprintf("/%d/phase%d/%s", payload.Block, payload.Phase, node.ID().String())
+	selfAccountedFor := utils.Contains(allKeys, hostKey)
+
 	fmt.Println("<---- prefix:", len(validators), len(keys), prefix, from)
 	// fmt.Println("keys:", keys)
 	// fmt.Println("values:", values)
 
 	// wait for 90th percentile response
-	if len(keys)*10 >= len(validators)*9 {
+	if selfAccountedFor && len(keys)*10 >= len(validators)*9 {
 		statusObj.PhaseCompleted = 1
 		err := setStatusObj(statusObj, payload.Block, datastore)
 		if err != nil {
@@ -914,7 +932,7 @@ func consumePhase1(payload Phase1Payload, from peer.ID, datastore ds.Datastore, 
 	// TODO: cleanup memory store, datastore, etc. for each /block-number
 }
 
-func consumePhase2(payload PhasePayload, from peer.ID, datastore ds.Datastore, channels Channels, conds Conds, condsPrev Conds) {
+func consumePhase2(node host.Host, payload PhasePayload, from peer.ID, datastore ds.Datastore, channels Channels, conds Conds, condsPrev Conds) {
 	validators, err := getValidatorsFromStore(payload.Block, datastore)
 	if err != nil {
 		return
@@ -942,7 +960,7 @@ func consumePhase2(payload PhasePayload, from peer.ID, datastore ds.Datastore, c
 	phase2Completed := statusObj.PhaseCompleted >= 2
 
 	if phase2Completed {
-		log.Printf("Phase 2 already completed. Status: %d\n", statusObj.PhaseCompleted)
+		// log.Printf("Phase 2 already completed. Status: %d\n", statusObj.PhaseCompleted)
 		return
 	}
 
@@ -996,10 +1014,16 @@ func consumePhase2(payload PhasePayload, from peer.ID, datastore ds.Datastore, c
 		return
 	}
 
+	allKeys := utils.Map(keys, func(key ds.Key) string {
+		return key.String()
+	})
+	hostKey := consensusPrefix + fmt.Sprintf("/%d/phase%d/%s", payload.Block, payload.Phase, node.ID().String())
+	selfAccountedFor := utils.Contains(allKeys, hostKey)
+
 	fmt.Println("<---- prefix:", len(validators), len(keys), prefix, from)
 
 	// wait for 90th percentile response (among committed set from phase1)
-	if len(keys)*100 >= len(validators)*81 {
+	if selfAccountedFor && len(keys)*100 >= len(validators)*81 {
 		statusObj.PhaseCompleted = 2
 		err := setStatusObj(statusObj, payload.Block, datastore)
 		if err != nil {
@@ -1012,7 +1036,7 @@ func consumePhase2(payload PhasePayload, from peer.ID, datastore ds.Datastore, c
 	}
 }
 
-func consumePhase3(payload Phase3Payload, from peer.ID, datastore ds.Datastore, channels Channels, conds Conds, condsPrev Conds) {
+func consumePhase3(node host.Host, payload Phase3Payload, from peer.ID, datastore ds.Datastore, channels Channels, conds Conds, condsPrev Conds) {
 	validators, err := getValidatorsFromStore(payload.Block, datastore)
 	if err != nil {
 		return
@@ -1091,7 +1115,7 @@ func consumePhase3(payload Phase3Payload, from peer.ID, datastore ds.Datastore, 
 	}
 
 	if phase3Completed {
-		log.Printf("Phase 3 already completed. Status: %d\n", statusObj.PhaseCompleted)
+		// log.Printf("Phase 3 already completed. Status: %d\n", statusObj.PhaseCompleted)
 		return
 	}
 
@@ -1103,10 +1127,16 @@ func consumePhase3(payload Phase3Payload, from peer.ID, datastore ds.Datastore, 
 		return
 	}
 
+	allKeys := utils.Map(keys, func(key ds.Key) string {
+		return key.String()
+	})
+	hostKey := consensusPrefix + fmt.Sprintf("/%d/phase%d/%s", payload.Block, payload.Phase, node.ID().String())
+	selfAccountedFor := utils.Contains(allKeys, hostKey)
+
 	fmt.Println("<---- prefix:", len(validators), len(keys), prefix, from)
 
 	// wait for 3/4 responses
-	if len(keys)*4 >= len(validators)*3 {
+	if selfAccountedFor && len(keys)*4 >= len(validators)*3 {
 		statusObj.PhaseCompleted = 3
 		err := setStatusObj(statusObj, payload.Block, datastore)
 		if err != nil {
@@ -1119,7 +1149,7 @@ func consumePhase3(payload Phase3Payload, from peer.ID, datastore ds.Datastore, 
 	}
 }
 
-func consumePhase4(payload Phase4Payload, from peer.ID, datastore ds.Datastore, channels Channels, conds Conds, condsPrev Conds) {
+func consumePhase4(node host.Host, payload Phase4Payload, from peer.ID, datastore ds.Datastore, channels Channels, conds Conds, condsPrev Conds) {
 	validators, err := getValidatorsFromStore(payload.Block, datastore)
 	if err != nil {
 		return
@@ -1169,7 +1199,7 @@ func consumePhase4(payload Phase4Payload, from peer.ID, datastore ds.Datastore, 
 	}
 
 	if phase4Completed {
-		log.Printf("Phase 4 already completed. Status: %d\n", statusObj.PhaseCompleted)
+		// log.Printf("Phase 4 already completed. Status: %d\n", statusObj.PhaseCompleted)
 		return
 	}
 
@@ -1181,10 +1211,16 @@ func consumePhase4(payload Phase4Payload, from peer.ID, datastore ds.Datastore, 
 		return
 	}
 
+	allKeys := utils.Map(keys, func(key ds.Key) string {
+		return key.String()
+	})
+	hostKey := consensusPrefix + fmt.Sprintf("/%d/phase%d/%s", payload.Block, payload.Phase, node.ID().String())
+	selfAccountedFor := utils.Contains(allKeys, hostKey)
+
 	fmt.Println("<---- prefix:", len(validators), len(keys), prefix, from)
 
 	// wait for 90th percentile response
-	if len(keys)*10 >= len(validators)*9 {
+	if selfAccountedFor && len(keys)*10 >= len(validators)*9 {
 		statusObj.PhaseCompleted = 4
 		err := setStatusObj(statusObj, payload.Block, datastore)
 		if err != nil {
@@ -1197,7 +1233,7 @@ func consumePhase4(payload Phase4Payload, from peer.ID, datastore ds.Datastore, 
 	}
 }
 
-func consumePhase5(payload Phase5Payload, from peer.ID, datastore ds.Datastore, channels Channels, conds Conds, condsPrev Conds) {
+func consumePhase5(node host.Host, payload Phase5Payload, from peer.ID, datastore ds.Datastore, channels Channels, conds Conds, condsPrev Conds) {
 	validators, err := getValidatorsFromStore(payload.Block, datastore)
 	if err != nil {
 		return
@@ -1235,7 +1271,7 @@ func consumePhase5(payload Phase5Payload, from peer.ID, datastore ds.Datastore, 
 	phase5Completed := statusObj.PhaseCompleted >= 5
 
 	if phase5Completed {
-		log.Printf("Phase 5 already completed. Status: %d\n", statusObj.PhaseCompleted)
+		// log.Printf("Phase 5 already completed. Status: %d\n", statusObj.PhaseCompleted)
 		return
 	}
 
@@ -1270,7 +1306,7 @@ func consumePhase5(payload Phase5Payload, from peer.ID, datastore ds.Datastore, 
 
 	// query saved response messages
 	prefix := consensusPrefix + fmt.Sprintf("/%d/phase%d", payload.Block, payload.Phase)
-	_, values, err := QueryWithPrefix(datastore, prefix)
+	keys, values, err := QueryWithPrefix(datastore, prefix)
 	if err != nil {
 		log.Println(fmt.Sprintf("Error querying datastore with prefix: %s", prefix), err)
 		return
@@ -1418,7 +1454,13 @@ func consumePhase5(payload Phase5Payload, from peer.ID, datastore ds.Datastore, 
 		retVal = 0
 	}
 
-	if retVal >= 0 {
+	allKeys := utils.Map(keys, func(key ds.Key) string {
+		return key.String()
+	})
+	hostKey := consensusPrefix + fmt.Sprintf("/%d/phase%d/%s", payload.Block, payload.Phase, node.ID().String())
+	selfAccountedFor := utils.Contains(allKeys, hostKey)
+
+	if selfAccountedFor && retVal >= 0 {
 		statusObj.PhaseCompleted = 5
 		err := setStatusObj(statusObj, payload.Block, datastore)
 		if err != nil {
@@ -1431,7 +1473,7 @@ func consumePhase5(payload Phase5Payload, from peer.ID, datastore ds.Datastore, 
 	}
 }
 
-func consumePhase6(payload Phase6Payload, from peer.ID, datastore ds.Datastore, channels Channels, conds Conds, condsPrev Conds) {
+func consumePhase6(node host.Host, payload Phase6Payload, from peer.ID, datastore ds.Datastore, channels Channels, conds Conds, condsPrev Conds) {
 	validators, err := getValidatorsFromStore(payload.Block, datastore)
 	if err != nil {
 		return
@@ -1481,7 +1523,7 @@ func consumePhase6(payload Phase6Payload, from peer.ID, datastore ds.Datastore, 
 	phase6Completed := statusObj.PhaseCompleted >= 6
 
 	if phase6Completed {
-		log.Printf("Phase 6 already completed. Status: %d\n", statusObj.PhaseCompleted)
+		// log.Printf("Phase 6 already completed. Status: %d\n", statusObj.PhaseCompleted)
 		return
 	}
 
@@ -1511,6 +1553,14 @@ func consumePhase6(payload Phase6Payload, from peer.ID, datastore ds.Datastore, 
 	// p6Key := ds.NewKey(consensusPrefix + fmt.Sprintf("/%d/phase%d/%s", payload.Block, payload.Phase, from))
 	if err := datastore.Put(context.Background(), p6Key, []byte(p6DataStr)); err != nil {
 		log.Println(fmt.Sprintf("Error putting value in datastore for key: %s", p6Key), err)
+		return
+	}
+
+	// query saved response messages
+	prefix := consensusPrefix + fmt.Sprintf("/%d/phase%d", payload.Block, payload.Phase)
+	keys, _, err := QueryWithPrefix(datastore, prefix)
+	if err != nil {
+		log.Println(fmt.Sprintf("Error querying datastore with prefix: %s", prefix), err)
 		return
 	}
 
@@ -1594,7 +1644,13 @@ func consumePhase6(payload Phase6Payload, from peer.ID, datastore ds.Datastore, 
 		retVal = 0
 	}
 
-	if retVal >= 0 {
+	allKeys := utils.Map(keys, func(key ds.Key) string {
+		return key.String()
+	})
+	hostKey := consensusPrefix + fmt.Sprintf("/%d/phase%d/%s", payload.Block, payload.Phase, node.ID().String())
+	selfAccountedFor := utils.Contains(allKeys, hostKey)
+
+	if selfAccountedFor && retVal >= 0 {
 		statusObj.PhaseCompleted = 6
 		err := setStatusObj(statusObj, payload.Block, datastore)
 		if err != nil {
@@ -1622,7 +1678,7 @@ func listenConsensusTopic(node host.Host, topic *pubsub.Topic, datastore ds.Data
 			msg, err := subs.Next(context.Background())
 			if err != nil {
 				log.Println("Error receiving message:", err)
-				return
+				continue
 			}
 
 			data := string(msg.Data)
@@ -1632,15 +1688,26 @@ func listenConsensusTopic(node host.Host, topic *pubsub.Topic, datastore ds.Data
 			err = json.Unmarshal([]byte(data), &_payload)
 			if err != nil {
 				log.Println("Error unmarshalling JSON:", err)
-				return
+				continue
 			}
 
-			if _payload.Phase == 1 {
+			statusObj, err := getStatusObj(_payload.Block, datastore)
+			if err != nil {
+				log.Println("Unable to get statusObj:", err)
+				continue
+			}
+			ongoingPhase := statusObj.PhaseCompleted + 1
+			maxAllowedPhase := ongoingPhase + 1
+
+			if _payload.Phase > maxAllowedPhase {
+				log.Printf("[WARN] Ignoring out-of-phase message from %s phase: %d block: %d\n", _payload.From, _payload.Phase, _payload.Block)
+				continue
+			} else if _payload.Phase == 1 {
 				var payload Phase1Payload
 				err := json.Unmarshal([]byte(data), &payload)
 				if err != nil {
 					log.Println("Error unmarshalling JSON:", err)
-					return
+					continue
 				}
 
 				// keep it outside goroutine for thread-safety of map
@@ -1650,7 +1717,7 @@ func listenConsensusTopic(node host.Host, topic *pubsub.Topic, datastore ds.Data
 
 				conds := condsFactory(payload.Block, payload.Phase, condsMap)
 				go func() {
-					consumePhase1(payload, from, datastore, channels, conds)
+					consumePhase1(node, payload, from, datastore, channels, conds)
 				}()
 			} else if _payload.Phase == 2 {
 				payload := _payload
@@ -1663,14 +1730,14 @@ func listenConsensusTopic(node host.Host, topic *pubsub.Topic, datastore ds.Data
 				conds := condsFactory(payload.Block, payload.Phase, condsMap)
 				condsPrev := condsFactory(payload.Block, payload.Phase-1, condsMap)
 				go func() {
-					consumePhase2(payload, from, datastore, channels, conds, condsPrev)
+					consumePhase2(node, payload, from, datastore, channels, conds, condsPrev)
 				}()
 			} else if _payload.Phase == 3 {
 				var payload Phase3Payload
 				err := json.Unmarshal([]byte(data), &payload)
 				if err != nil {
 					log.Println("Error unmarshalling JSON:", err)
-					return
+					continue
 				}
 
 				// keep it outside goroutine for thread-safety of map
@@ -1681,14 +1748,14 @@ func listenConsensusTopic(node host.Host, topic *pubsub.Topic, datastore ds.Data
 				conds := condsFactory(payload.Block, payload.Phase, condsMap)
 				condsPrev := condsFactory(payload.Block, payload.Phase-1, condsMap)
 				go func() {
-					consumePhase3(payload, from, datastore, channels, conds, condsPrev)
+					consumePhase3(node, payload, from, datastore, channels, conds, condsPrev)
 				}()
 			} else if _payload.Phase == 4 {
 				var payload Phase4Payload
 				err := json.Unmarshal([]byte(data), &payload)
 				if err != nil {
 					log.Println("Error unmarshalling JSON:", err)
-					return
+					continue
 				}
 
 				// keep it outside goroutine for thread-safety of map
@@ -1699,14 +1766,14 @@ func listenConsensusTopic(node host.Host, topic *pubsub.Topic, datastore ds.Data
 				conds := condsFactory(payload.Block, payload.Phase, condsMap)
 				condsPrev := condsFactory(payload.Block, payload.Phase-1, condsMap)
 				go func() {
-					consumePhase4(payload, from, datastore, channels, conds, condsPrev)
+					consumePhase4(node, payload, from, datastore, channels, conds, condsPrev)
 				}()
 			} else if _payload.Phase == 5 {
 				var payload Phase5Payload
 				err := json.Unmarshal([]byte(data), &payload)
 				if err != nil {
 					log.Println("Error unmarshalling JSON:", err)
-					return
+					continue
 				}
 
 				// keep it outside goroutine for thread-safety of map
@@ -1717,14 +1784,14 @@ func listenConsensusTopic(node host.Host, topic *pubsub.Topic, datastore ds.Data
 				conds := condsFactory(payload.Block, payload.Phase, condsMap)
 				condsPrev := condsFactory(payload.Block, payload.Phase-1, condsMap)
 				go func() {
-					consumePhase5(payload, from, datastore, channels, conds, condsPrev)
+					consumePhase5(node, payload, from, datastore, channels, conds, condsPrev)
 				}()
 			} else if _payload.Phase == 6 {
 				var payload Phase6Payload
 				err := json.Unmarshal([]byte(data), &payload)
 				if err != nil {
 					log.Println("Error unmarshalling JSON:", err)
-					return
+					continue
 				}
 
 				// keep it outside goroutine for thread-safety of map
@@ -1735,7 +1802,7 @@ func listenConsensusTopic(node host.Host, topic *pubsub.Topic, datastore ds.Data
 				conds := condsFactory(payload.Block, payload.Phase, condsMap)
 				condsPrev := condsFactory(payload.Block, payload.Phase-1, condsMap)
 				go func() {
-					consumePhase6(payload, from, datastore, channels, conds, condsPrev)
+					consumePhase6(node, payload, from, datastore, channels, conds, condsPrev)
 				}()
 			} else {
 				log.Fatalf("[ERROR] Unhandled phase value: %d (%d)\n", _payload.Phase, _payload.Block)
@@ -1744,7 +1811,8 @@ func listenConsensusTopic(node host.Host, topic *pubsub.Topic, datastore ds.Data
 	}(datastore)
 }
 
-func InitConsensusLoop(node host.Host, validators []peer.ID, ps *pubsub.PubSub, datastore ds.Datastore) {
+func InitConsensusLoop(node host.Host, ps *pubsub.PubSub, datastore ds.Datastore) {
+	validators := GetValidatorsList()
 	if includes := utils.IsValidator(node.ID(), validators); !includes {
 		// current node is not a validator
 		return
@@ -1784,7 +1852,7 @@ func InitConsensusLoop(node host.Host, validators []peer.ID, ps *pubsub.PubSub, 
 				data := createPhase1Payload(node, nextBlockNumber, entropy)
 				<-ticker
 				go func() {
-					triggerPhase1(entropy, nextBlockNumber, data, topic, validators, datastore)
+					triggerPhase1(entropy, nextBlockNumber, data, topic, datastore)
 				}()
 			} else {
 				time.Sleep(time.Duration(waitTimeMsec) * time.Millisecond)

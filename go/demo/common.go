@@ -148,7 +148,8 @@ func getNetworkTimeShift(node host.Host, validators []peer.ID, initialCall bool)
 	return timeShift
 }
 
-func AdjustNetworkTime(node host.Host, validators []peer.ID, initialCall bool) {
+func AdjustNetworkTime(node host.Host, initialCall bool) {
+	validators := GetValidatorsList()
 	go func() {
 		timeShift := getNetworkTimeShift(node, validators, initialCall)
 		shared.SetNetworkTimeShift(timeShift)

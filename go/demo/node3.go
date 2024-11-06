@@ -30,13 +30,6 @@ func Node3() {
 		// "/ip4/172.235.29.4/tcp/8002/p2p/QmXfjanvuRK2sGZDrKa388ZNHak5DNhkT1Pzibf4YLu5FR",
 	}
 
-	// TODO: fetch validator set (registry) from blockchain core contract
-	validators := []string{
-		"QmaT8zFZp8mKg6dAqxp4wNc7P9dn2WK6imPA37yG8zWwpq",
-		"QmXfjanvuRK2sGZDrKa388ZNHak5DNhkT1Pzibf4YLu5FR",
-		// "QmQNYyFizjhEFG2Sd4irQS2QvVa7kAwh9mNcsEraSBG4KB",
-	}
-
 	ctx := context.Background()
 
 	// ------------------
@@ -63,16 +56,6 @@ func Node3() {
 			panic(err)
 		}
 		bootstrapPeers = append(bootstrapPeers, *addrInfo)
-	}
-
-	// create validator nodes' peerIDs using their string IDs
-	var validatorsList []peer.ID
-	for _, idStr := range validators {
-		peerID, err := peer.Decode(idStr)
-		if err != nil {
-			panic(err)
-		}
-		validatorsList = append(validatorsList, peerID)
 	}
 
 	// create a new instance of DHT service
@@ -103,9 +86,9 @@ func Node3() {
 	datastore := InitDatastore()
 	// store := InitDataCluster(ctx, node, datastore, ps, kadDHT)
 
-	AdjustNetworkTime(node, validatorsList, true)
+	AdjustNetworkTime(node, true)
 
-	InitConsensusLoop(node, validatorsList, ps, datastore)
+	InitConsensusLoop(node, ps, datastore)
 
 	// ------------------
 
@@ -154,7 +137,7 @@ func Node3() {
 	}, 8*time.Second)
 
 	timer2 := utils.ExpBackOff(func() {
-		AdjustNetworkTime(node, validatorsList, false)
+		AdjustNetworkTime(node, false)
 	}, 3*time.Second, 30*time.Second)
 
 	// ------------------

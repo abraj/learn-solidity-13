@@ -52,7 +52,7 @@ func DemoTopicRead(ctx context.Context, ps *pubsub.PubSub) {
 			msg, err := subs.Next(ctx)
 			if err != nil {
 				log.Println("Error receiving message:", err)
-				return
+				continue
 			}
 
 			data := string(msg.Data)
