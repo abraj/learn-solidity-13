@@ -27,11 +27,10 @@ type PhasePayload struct {
 }
 
 type Phase1Payload struct {
-	From       string `json:"from"`
-	Block      int    `json:"block"`
-	Phase      int    `json:"phase"`
-	Hash       string `json:"hash"`
-	Ciphertext string `json:"ciphertext"`
+	From  string `json:"from"`
+	Block int    `json:"block"`
+	Phase int    `json:"phase"`
+	Hash  string `json:"hash"`
 }
 
 type Phase3Payload struct {
@@ -73,10 +72,9 @@ type PhaseData struct {
 }
 
 type Phase1Data struct {
-	From       string `json:"from"`
-	Hash       string `json:"hash"`
-	Ciphertext string `json:"ciphertext"`
-	Delayed    bool   `json:"delayed"`
+	From    string `json:"from"`
+	Hash    string `json:"hash"`
+	Delayed bool   `json:"delayed"`
 }
 
 type Phase3Data struct {
@@ -261,17 +259,8 @@ func nextBlockInfo() (int, int) {
 func createPhase1Payload(node host.Host, blockNumber int, entropy string) string {
 	hash := utils.CreateSHA3Hash(entropy)
 
-	key := utils.RandomHex(32)
-	iv := utils.RandomHex(16)
-
-	message := entropy
-	ciphertext, err := utils.EncryptAES256CBC(key, iv, message)
-	if err != nil {
-		panic(err)
-	}
-
 	from := node.ID().String()
-	payload := Phase1Payload{From: from, Block: blockNumber, Phase: 1, Hash: hash, Ciphertext: ciphertext}
+	payload := Phase1Payload{From: from, Block: blockNumber, Phase: 1, Hash: hash}
 	payloadData, _ := json.Marshal(payload)
 
 	payloadStr := string(payloadData)
@@ -854,12 +843,6 @@ func consumePhase1(node host.Host, payload Phase1Payload, from peer.ID, datastor
 		return
 	}
 
-	// AES-256: [160 len hex] 80 bytes: 64 bytes (plaintext as 64 length utf8) encypted text + 16 bytes IV
-	if len(payload.Ciphertext) != 160 {
-		log.Printf("Invalid ciphertext: %s (%s)\n", payload.Ciphertext, from)
-		return
-	}
-
 	channels.mutex.Lock()
 	defer channels.mutex.Unlock()
 
@@ -877,7 +860,7 @@ func consumePhase1(node host.Host, payload Phase1Payload, from peer.ID, datastor
 		return
 	}
 
-	data := Phase1Data{From: payload.From, Hash: payload.Hash, Ciphertext: payload.Ciphertext, Delayed: phase1Completed}
+	data := Phase1Data{From: payload.From, Hash: payload.Hash, Delayed: phase1Completed}
 	p1Data, err := json.Marshal(data)
 	if err != nil {
 		log.Println("Error marshalling JSON:", err)
