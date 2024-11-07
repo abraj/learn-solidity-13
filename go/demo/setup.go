@@ -6,8 +6,8 @@ func GetValidatorsList() []peer.ID {
 	// TODO: fetch validator set (registry) from blockchain core contract
 	validators := []string{
 		"QmaT8zFZp8mKg6dAqxp4wNc7P9dn2WK6imPA37yG8zWwpq",
-		"QmXfjanvuRK2sGZDrKa388ZNHak5DNhkT1Pzibf4YLu5FR",
-		// "QmQNYyFizjhEFG2Sd4irQS2QvVa7kAwh9mNcsEraSBG4KB",
+		// "QmXfjanvuRK2sGZDrKa388ZNHak5DNhkT1Pzibf4YLu5FR",
+		"QmQNYyFizjhEFG2Sd4irQS2QvVa7kAwh9mNcsEraSBG4KB",
 	}
 
 	// create validator nodes' peerIDs using their string IDs
