@@ -23,15 +23,25 @@ func RandomHex(bytesLength int) string {
 	return randHex
 }
 
-func CreateSHA3Hash(dataStr string) string {
-	data := []byte(dataStr)
+func CreateSHA3Hash(dataStr string, saltStrHex string) string {
+	hasher := sha3.New256()
 
-	hash := sha3.New256()
-	hash.Write(data)
-	hashedBytes := hash.Sum(nil)
+	if saltStrHex != "" {
+		saltBytes, err := hex.DecodeString(saltStrHex)
+		if err != nil {
+			fmt.Printf("Invalid salt (possibly not a hex string): %s %v\n", saltStrHex, err)
+			return ""
+		}
+		hasher.Write(saltBytes)
+	}
 
-	hashValue := hex.EncodeToString(hashedBytes)
-	return hashValue
+	dataBytes := []byte(dataStr)
+	hasher.Write(dataBytes)
+
+	hashedBytes := hasher.Sum(nil)
+
+	hashValueHex := hex.EncodeToString(hashedBytes)
+	return hashValueHex
 }
 
 // pad applies PKCS#7 padding to the input to make its length a multiple of the block size.
@@ -125,7 +135,7 @@ func MerkleHash(list []string) string {
 
 	curr_level := []string{}
 	for _, item := range list {
-		hash := CreateSHA3Hash(item)
+		hash := CreateSHA3Hash(item, "")
 		curr_level = append(curr_level, hash)
 	}
 
@@ -138,7 +148,7 @@ func MerkleHash(list []string) string {
 			} else {
 				data = curr_level[i] + curr_level[i] // duplicate last node
 			}
-			hash := CreateSHA3Hash(data)
+			hash := CreateSHA3Hash(data, "")
 			next_level = append(next_level, hash)
 		}
 		curr_level = next_level

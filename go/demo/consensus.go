@@ -31,6 +31,7 @@ type Phase1Payload struct {
 	Block int    `json:"block"`
 	Phase int    `json:"phase"`
 	Hash  string `json:"hash"`
+	Salt  string `json:"salt"`
 }
 
 type Phase3Payload struct {
@@ -74,6 +75,7 @@ type PhaseData struct {
 type Phase1Data struct {
 	From    string `json:"from"`
 	Hash    string `json:"hash"`
+	Salt    string `json:"salt"`
 	Delayed bool   `json:"delayed"`
 }
 
@@ -131,6 +133,7 @@ type ConsensusObj struct {
 
 type HashEntropy struct {
 	hash    string
+	salt    string
 	entropy string
 }
 
@@ -257,10 +260,11 @@ func nextBlockInfo() (int, int) {
 }
 
 func createPhase1Payload(node host.Host, blockNumber int, entropy string) string {
-	hash := utils.CreateSHA3Hash(entropy)
+	salt := utils.RandomHex(16)
+	hash := utils.CreateSHA3Hash(entropy, salt)
 
 	from := node.ID().String()
-	payload := Phase1Payload{From: from, Block: blockNumber, Phase: 1, Hash: hash}
+	payload := Phase1Payload{From: from, Block: blockNumber, Phase: 1, Hash: hash, Salt: salt}
 	payloadData, _ := json.Marshal(payload)
 
 	payloadStr := string(payloadData)
@@ -429,7 +433,7 @@ func createPhase5Payload(node host.Host, blockNumber int, datastore ds.Datastore
 			mu.Lock()
 			curr, ok2 := partisanMap[item]
 			if ok2 && !curr {
-				// NOTE: (entropy/commitment pair for) these items (suggested by other nodes)
+				// NOTE: (entropy/commitment for) these items (suggested by other nodes)
 				// are not verified as of now.
 				// Needs to be verified (locally) after phase5 response
 				partisanMap[item] = true
@@ -494,13 +498,14 @@ func createPhase6Payload(node host.Host, blockNumber int, datastore ds.Datastore
 				continue
 			}
 			item := p1Obj.From
-			pair, ok := hashMap[item]
+			tuple, ok := hashMap[item]
 			if !ok {
 				log.Printf("Unexpected phase1 key: %s\n", item)
 				continue
 			}
-			pair.hash = p1Obj.Hash
-			hashMap[item] = pair
+			tuple.hash = p1Obj.Hash
+			tuple.salt = p1Obj.Salt
+			hashMap[item] = tuple
 		}
 	}
 
@@ -519,13 +524,13 @@ func createPhase6Payload(node host.Host, blockNumber int, datastore ds.Datastore
 				continue
 			}
 			item := p3Obj.From
-			pair, ok := hashMap[item]
+			tuple, ok := hashMap[item]
 			if !ok {
 				log.Printf("Unexpected phase3 key: %s\n", item)
 				continue
 			}
-			pair.entropy = p3Obj.Entropy
-			hashMap[item] = pair
+			tuple.entropy = p3Obj.Entropy
+			hashMap[item] = tuple
 		}
 	}
 
@@ -553,15 +558,15 @@ func createPhase6Payload(node host.Host, blockNumber int, datastore ds.Datastore
 	//  have arrived (as part of the phase1 and phase3 responses) to the current node
 	for _, item := range consensusObj.InFavor {
 		value := hashMap[item]
-		if value.hash == "" || value.entropy == "" {
-			log.Printf("entropy/hash pair does not exist for key: %s (%s, %s)\n", item, value.entropy, value.hash)
+		if value.hash == "" || value.entropy == "" || value.salt == "" {
+			log.Printf("entropy/hash does not exist in hashMap for key: %s (%s, %s, %s)\n", item, value.entropy, value.hash, value.salt)
 			return ""
 		}
 
-		// verify commit reveal
-		hash := utils.CreateSHA3Hash(value.entropy)
-		if hash != value.hash {
-			log.Printf("Unable to verify commitment for key: %s (%s, %s)\n", item, value.entropy, value.hash)
+		// verify commit reveal (again)
+		hash := utils.CreateSHA3Hash(value.entropy, value.salt)
+		if hash == "" || hash != value.hash {
+			log.Printf("Unable to verify commitment for key: %s (%s, %s, %s)\n", item, value.entropy, value.hash, value.salt)
 			return ""
 		}
 	}
@@ -571,7 +576,7 @@ func createPhase6Payload(node host.Host, blockNumber int, datastore ds.Datastore
 
 	composedHash := ""
 	for _, item := range consensusList {
-		composedHash = utils.CreateSHA3Hash(composedHash + hashMap[item].entropy)
+		composedHash = utils.CreateSHA3Hash(composedHash+hashMap[item].entropy, "")
 	}
 
 	// VDF delay
@@ -843,6 +848,12 @@ func consumePhase1(node host.Host, payload Phase1Payload, from peer.ID, datastor
 		return
 	}
 
+	// Salt: [32 len hex] 16 bytes
+	if len(payload.Salt) != 32 {
+		log.Printf("Invalid salt: %s (%s)\n", payload.Salt, from)
+		return
+	}
+
 	channels.mutex.Lock()
 	defer channels.mutex.Unlock()
 
@@ -860,7 +871,7 @@ func consumePhase1(node host.Host, payload Phase1Payload, from peer.ID, datastor
 		return
 	}
 
-	data := Phase1Data{From: payload.From, Hash: payload.Hash, Delayed: phase1Completed}
+	data := Phase1Data{From: payload.From, Hash: payload.Hash, Salt: payload.Salt, Delayed: phase1Completed}
 	p1Data, err := json.Marshal(data)
 	if err != nil {
 		log.Println("Error marshalling JSON:", err)
@@ -956,14 +967,14 @@ func consumePhase2(node host.Host, payload PhasePayload, from peer.ID, datastore
 
 	// `from` must be in committed set from phase1
 	p1Key := ds.NewKey(consensusPrefix + fmt.Sprintf("/%d/phase1/%s", payload.Block, from))
-	msgData, err := datastore.Get(context.Background(), p1Key)
+	p1MsgData, err := datastore.Get(context.Background(), p1Key)
 	if err != nil {
 		// log.Println(fmt.Sprintf("Error getting value from datastore for key: %s", p1Key), err)
 		return
 	}
 
 	var p1Msg Phase1Data
-	err = json.Unmarshal(msgData, &p1Msg)
+	err = json.Unmarshal(p1MsgData, &p1Msg)
 	if err != nil {
 		log.Printf("Error unmarshalling phase1 message: %v", err)
 		return
@@ -1060,22 +1071,22 @@ func consumePhase3(node host.Host, payload Phase3Payload, from peer.ID, datastor
 	}
 
 	p1Key := ds.NewKey(consensusPrefix + fmt.Sprintf("/%d/phase1/%s", payload.Block, from))
-	msgData, err := datastore.Get(context.Background(), p1Key)
+	p1MsgData, err := datastore.Get(context.Background(), p1Key)
 	if err != nil {
 		// log.Println(fmt.Sprintf("Error getting value from datastore for key: %s", p1Key), err)
 		return
 	}
 
 	var p1Msg Phase1Data
-	err = json.Unmarshal(msgData, &p1Msg)
+	err = json.Unmarshal(p1MsgData, &p1Msg)
 	if err != nil {
 		log.Printf("Error unmarshalling phase1 message: %v", err)
 		return
 	}
 
-	// verify reveal message
-	hash := utils.CreateSHA3Hash(payload.Entropy)
-	if hash != p1Msg.Hash {
+	// verify commit reveal
+	hash := utils.CreateSHA3Hash(payload.Entropy, p1Msg.Salt)
+	if hash == "" || hash != p1Msg.Hash {
 		log.Printf("Unable to verify commitment: %s (%s)\n", p1Msg.Hash, payload.Entropy)
 		return
 	}
@@ -1570,7 +1581,7 @@ func consumePhase6(node host.Host, payload Phase6Payload, from peer.ID, datastor
 		return
 	}
 
-	rKey := utils.CreateSHA3Hash(payload.Seed + payload.Entropy + strconv.FormatInt(payload.Steps, 10))
+	rKey := utils.CreateSHA3Hash(payload.Seed+payload.Entropy+strconv.FormatInt(payload.Steps, 10), "")
 	eVotes, ok := rvotesObj.EntropyVotes[rKey]
 	if ok {
 		rvotesObj.EntropyVotes[rKey] = eVotes + 1
