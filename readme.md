@@ -47,6 +47,7 @@ go build -o libp2p-node
 ### go-libp2p
 
 - https://github.com/libp2p/go-libp2p
+- https://github.com/libp2p/go-libp2p/blob/master/options.go
 - https://www.youtube.com/watch?v=BUc4xta7Mfk
 - https://ipfscluster.io/documentation/guides/consensus/
 
@@ -54,8 +55,26 @@ go build -o libp2p-node
 
 - https://www.youtube.com/playlist?list=PLZvgWu86XaWkpnQa6-OA7DG6ilM_RnxhW
 - https://youtu.be/diqGSOLpyQ8?list=PLZvgWu86XaWkpnQa6-OA7DG6ilM_RnxhW&t=137
+- [Verifiable Delay Functions - Dan Boneh](https://www.youtube.com/watch?v=dN-1q8c50q0)
+- [BFT algorithms for blockchain](https://chatgpt.com/c/672d5b7f-1010-8006-bf78-898186505d51)
+- https://arxiv.org/pdf/1807.04938
+- https://github.com/tendermint/tendermint/blob/main/spec/README.md
+- https://docs.tendermint.com/v0.34/introduction/what-is-tendermint.html
+- https://docs.cometbft.com/v0.38/
+- [Types of consensus among oracle nodes](https://chatgpt.com/c/670e903e-35fc-8006-9c87-d94ab96a1366)
 
-### Docs
+### Chains
+
+- https://safe.global/
+- https://cosmos.network/
+- https://tutorials.cosmos.network/academy/1-what-is-cosmos/
+
+### Protocols
+
+- https://developer.litprotocol.com/user-wallets/pkps/quick-start
+- https://fluence.dev/docs/learn/fluence-comparison
+
+### js-libp2p
 
 - https://libp2p.github.io/js-libp2p/
 - https://docs.libp2p.io/guides/getting-started/

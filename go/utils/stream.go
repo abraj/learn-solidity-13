@@ -31,6 +31,9 @@ func WriteStream(s network.Stream, data string) error {
 	// dataSent := data
 	dataSent := data + "\n"
 
+	// NOTE: memory-efficient for large JSON data
+	// err:= json.NewEncoder(s).Encode(data)
+
 	_, err := s.Write([]byte(dataSent))
 	return err
 }
