@@ -31,7 +31,6 @@ type Phase1Payload struct {
 	Block int    `json:"block"`
 	Phase int    `json:"phase"`
 	Hash  string `json:"hash"`
-	Salt  string `json:"salt"`
 }
 
 type Phase3Payload struct {
@@ -39,6 +38,7 @@ type Phase3Payload struct {
 	Block   int    `json:"block"`
 	Phase   int    `json:"phase"`
 	Entropy string `json:"entropy"`
+	Salt    string `json:"salt"`
 }
 
 type Phase4Payload struct {
@@ -58,13 +58,13 @@ type Phase5Payload struct {
 }
 
 type Phase6Payload struct {
-	From    string `json:"from"`
-	Block   int    `json:"block"`
-	Phase   int    `json:"phase"`
-	Seed    string `json:"seed"`    // accumulated entropy from contributions by validators
-	Entropy string `json:"entropy"` // output from VDF delay function
-	Delay   int64  `json:"delay"`   // delay in ms
-	Steps   int64  `json:"steps"`   // number of steps for VDF delay function
+	From   string `json:"from"`
+	Block  int    `json:"block"`
+	Phase  int    `json:"phase"`
+	Seed   string `json:"seed"`   // accumulated entropy from contributions by validators
+	Output string `json:"output"` // output from VDF delay function
+	Delay  int64  `json:"delay"`  // delay in ms
+	Steps  int64  `json:"steps"`  // number of steps for VDF delay function
 }
 
 type PhaseData struct {
@@ -75,13 +75,13 @@ type PhaseData struct {
 type Phase1Data struct {
 	From    string `json:"from"`
 	Hash    string `json:"hash"`
-	Salt    string `json:"salt"`
 	Delayed bool   `json:"delayed"`
 }
 
 type Phase3Data struct {
 	From    string `json:"from"`
 	Entropy string `json:"entropy"`
+	Salt    string `json:"salt"`
 	Delayed bool   `json:"delayed"`
 }
 
@@ -101,13 +101,14 @@ type Phase5Data struct {
 type Phase6Data struct {
 	From       string `json:"from"`
 	Seed       string `json:"seed"`
-	Entropy    string `json:"entropy"`
+	Output     string `json:"output"`
 	Steps      int64  `json:"steps"`
 	IsVerified bool   `json:"isVerified"`
 }
 
 type PhaseStatus struct {
 	Entropy        string `json:"entropy"`
+	Salt           string `json:"salt"`
 	PhaseCompleted int    `json:"phase"`
 }
 
@@ -133,8 +134,8 @@ type ConsensusObj struct {
 
 type HashEntropy struct {
 	hash    string
-	salt    string
 	entropy string
+	salt    string
 }
 
 type Channels struct {
@@ -259,12 +260,11 @@ func nextBlockInfo() (int, int) {
 	return nextBlockNumber, waitTimeMsec
 }
 
-func createPhase1Payload(node host.Host, blockNumber int, entropy string) string {
-	salt := utils.RandomHex(16)
+func createPhase1Payload(node host.Host, blockNumber int, entropy string, salt string) string {
 	hash := utils.CreateSHA3Hash(entropy, salt)
 
 	from := node.ID().String()
-	payload := Phase1Payload{From: from, Block: blockNumber, Phase: 1, Hash: hash, Salt: salt}
+	payload := Phase1Payload{From: from, Block: blockNumber, Phase: 1, Hash: hash}
 	payloadData, _ := json.Marshal(payload)
 
 	payloadStr := string(payloadData)
@@ -287,7 +287,7 @@ func createPhase3Payload(node host.Host, blockNumber int, datastore ds.Datastore
 	}
 
 	from := node.ID().String()
-	payload := Phase3Payload{From: from, Block: blockNumber, Phase: 3, Entropy: statusObj.Entropy}
+	payload := Phase3Payload{From: from, Block: blockNumber, Phase: 3, Entropy: statusObj.Entropy, Salt: statusObj.Salt}
 	payloadData, _ := json.Marshal(payload)
 
 	payloadStr := string(payloadData)
@@ -504,7 +504,6 @@ func createPhase6Payload(node host.Host, blockNumber int, datastore ds.Datastore
 				continue
 			}
 			tuple.hash = p1Obj.Hash
-			tuple.salt = p1Obj.Salt
 			hashMap[item] = tuple
 		}
 	}
@@ -530,6 +529,7 @@ func createPhase6Payload(node host.Host, blockNumber int, datastore ds.Datastore
 				continue
 			}
 			tuple.entropy = p3Obj.Entropy
+			tuple.salt = p3Obj.Salt
 			hashMap[item] = tuple
 		}
 	}
@@ -559,14 +559,14 @@ func createPhase6Payload(node host.Host, blockNumber int, datastore ds.Datastore
 	for _, item := range consensusObj.InFavor {
 		value := hashMap[item]
 		if value.hash == "" || value.entropy == "" || value.salt == "" {
-			log.Printf("entropy/hash does not exist in hashMap for key: %s (%s, %s, %s)\n", item, value.entropy, value.hash, value.salt)
+			log.Printf("entropy/hash does not exist in hashMap for key: %s (%s, %s, %s)\n", item, value.hash, value.entropy, value.salt)
 			return ""
 		}
 
 		// verify commit reveal (again)
 		hash := utils.CreateSHA3Hash(value.entropy, value.salt)
 		if hash == "" || hash != value.hash {
-			log.Printf("Unable to verify commitment for key: %s (%s, %s, %s)\n", item, value.entropy, value.hash, value.salt)
+			log.Printf("Unable to verify commitment for key: %s (%s, %s, %s)\n", item, value.hash, value.entropy, value.salt)
 			return ""
 		}
 	}
@@ -600,11 +600,11 @@ func createPhase6Payload(node host.Host, blockNumber int, datastore ds.Datastore
 		}
 	}
 
-	entropy := y.Text(16)
+	output := y.Text(16)
 	delay := t2.Sub(t1).Milliseconds()
 
 	from := node.ID().String()
-	payload := Phase6Payload{From: from, Block: blockNumber, Phase: 6, Seed: composedHash, Entropy: entropy, Delay: delay, Steps: t}
+	payload := Phase6Payload{From: from, Block: blockNumber, Phase: 6, Seed: composedHash, Output: output, Delay: delay, Steps: t}
 	payloadData, _ := json.Marshal(payload)
 
 	payloadStr := string(payloadData)
@@ -644,7 +644,7 @@ func initBlockData(blockNumber int, datastore ds.Datastore) []peer.ID {
 }
 
 // phase1: commit phase
-func triggerPhase1(entropy string, nextBlockNumber int, data string, topic *pubsub.Topic, datastore ds.Datastore) {
+func triggerPhase1(entropy string, salt string, nextBlockNumber int, data string, topic *pubsub.Topic, datastore ds.Datastore) {
 	shared.SetLatestBlockNumber(nextBlockNumber)
 
 	// var payload Phase1Payload
@@ -660,6 +660,7 @@ func triggerPhase1(entropy string, nextBlockNumber int, data string, topic *pubs
 	}
 
 	statusObj.Entropy = entropy
+	statusObj.Salt = salt
 	err = setStatusObj(statusObj, nextBlockNumber, datastore)
 	if err != nil {
 		return
@@ -848,12 +849,6 @@ func consumePhase1(node host.Host, payload Phase1Payload, from peer.ID, datastor
 		return
 	}
 
-	// Salt: [32 len hex] 16 bytes
-	if len(payload.Salt) != 32 {
-		log.Printf("Invalid salt: %s (%s)\n", payload.Salt, from)
-		return
-	}
-
 	channels.mutex.Lock()
 	defer channels.mutex.Unlock()
 
@@ -871,7 +866,7 @@ func consumePhase1(node host.Host, payload Phase1Payload, from peer.ID, datastor
 		return
 	}
 
-	data := Phase1Data{From: payload.From, Hash: payload.Hash, Salt: payload.Salt, Delayed: phase1Completed}
+	data := Phase1Data{From: payload.From, Hash: payload.Hash, Delayed: phase1Completed}
 	p1Data, err := json.Marshal(data)
 	if err != nil {
 		log.Println("Error marshalling JSON:", err)
@@ -1047,6 +1042,12 @@ func consumePhase3(node host.Host, payload Phase3Payload, from peer.ID, datastor
 		return
 	}
 
+	// Salt: [32 len hex] 16 bytes
+	if len(payload.Salt) != 32 {
+		log.Printf("Invalid salt: %s (%s)\n", payload.Salt, from)
+		return
+	}
+
 	channels.mutex.Lock()
 	defer channels.mutex.Unlock()
 
@@ -1085,13 +1086,13 @@ func consumePhase3(node host.Host, payload Phase3Payload, from peer.ID, datastor
 	}
 
 	// verify commit reveal
-	hash := utils.CreateSHA3Hash(payload.Entropy, p1Msg.Salt)
+	hash := utils.CreateSHA3Hash(payload.Entropy, payload.Salt)
 	if hash == "" || hash != p1Msg.Hash {
-		log.Printf("Unable to verify commitment: %s (%s)\n", p1Msg.Hash, payload.Entropy)
+		log.Printf("Unable to verify commitment: %s (%s %s)\n", p1Msg.Hash, payload.Entropy, payload.Salt)
 		return
 	}
 
-	data := Phase3Data{From: payload.From, Entropy: payload.Entropy, Delayed: p1Msg.Delayed}
+	data := Phase3Data{From: payload.From, Entropy: payload.Entropy, Salt: payload.Salt, Delayed: p1Msg.Delayed}
 	p3Data, err := json.Marshal(data)
 	if err != nil {
 		log.Println("Error marshalling JSON:", err)
@@ -1531,11 +1532,11 @@ func consumePhase6(node host.Host, payload Phase6Payload, from peer.ID, datastor
 	// VDF verify
 	t := payload.Steps
 	x, _ := new(big.Int).SetString(payload.Seed, 16)
-	y, _ := new(big.Int).SetString(payload.Entropy, 16)
+	y, _ := new(big.Int).SetString(payload.Output, 16)
 	v := vdf.NewVDF()
 	isVerified := v.Verify(t, x, y)
 
-	data := Phase6Data{From: payload.From, Seed: payload.Seed, Entropy: payload.Entropy, Steps: payload.Steps, IsVerified: isVerified}
+	data := Phase6Data{From: payload.From, Seed: payload.Seed, Output: payload.Output, Steps: payload.Steps, IsVerified: isVerified}
 	p6Data, err := json.Marshal(data)
 	if err != nil {
 		log.Println("Error marshalling JSON:", err)
@@ -1577,17 +1578,17 @@ func consumePhase6(node host.Host, payload Phase6Payload, from peer.ID, datastor
 	fmt.Println("<---- data:", len(validators), rvotesObj.Votes, "phase6", data.From)
 
 	if !isVerified {
-		log.Printf("[ERROR] VDF verification failed! x: %s y: %s t: %d\n", payload.Seed, payload.Entropy, payload.Steps)
+		log.Printf("[ERROR] VDF verification failed! x: %s y: %s t: %d\n", payload.Seed, payload.Output, payload.Steps)
 		return
 	}
 
-	rKey := utils.CreateSHA3Hash(payload.Seed+payload.Entropy+strconv.FormatInt(payload.Steps, 10), "")
+	rKey := utils.CreateSHA3Hash(payload.Seed+payload.Output+strconv.FormatInt(payload.Steps, 10), "")
 	eVotes, ok := rvotesObj.EntropyVotes[rKey]
 	if ok {
 		rvotesObj.EntropyVotes[rKey] = eVotes + 1
 	} else {
 		rvotesObj.EntropyVotes[rKey] = 1
-		rvotesObj.EntropyMap[rKey] = payload.Entropy
+		rvotesObj.EntropyMap[rKey] = payload.Output
 	}
 
 	rvotesObjStr, err := json.Marshal(rvotesObj)
@@ -1843,10 +1844,11 @@ func InitConsensusLoop(node host.Host, ps *pubsub.PubSub, datastore ds.Datastore
 			if nextBlockNumber > 0 {
 				ticker := time.After(time.Duration(waitTimeMsec) * time.Millisecond)
 				entropy := utils.RandomHex(32)
-				data := createPhase1Payload(node, nextBlockNumber, entropy)
+				salt := utils.RandomHex(16)
+				data := createPhase1Payload(node, nextBlockNumber, entropy, salt)
 				<-ticker
 				go func() {
-					triggerPhase1(entropy, nextBlockNumber, data, topic, datastore)
+					triggerPhase1(entropy, salt, nextBlockNumber, data, topic, datastore)
 				}()
 			} else {
 				time.Sleep(time.Duration(waitTimeMsec) * time.Millisecond)

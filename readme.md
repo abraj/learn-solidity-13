@@ -62,6 +62,7 @@ go build -o libp2p-node
 - https://docs.tendermint.com/v0.34/introduction/what-is-tendermint.html
 - https://docs.cometbft.com/v0.38/
 - [Types of consensus among oracle nodes](https://chatgpt.com/c/670e903e-35fc-8006-9c87-d94ab96a1366)
+- https://www.youtube.com/watch?v=yCMj_dfeO0k
 
 ### Chains
 
