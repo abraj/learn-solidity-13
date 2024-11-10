@@ -73,7 +73,9 @@ func queryTime(node host.Host, peerID peer.ID) (int64, int64) {
 	return 0, t0
 }
 
-func getNetworkTimeShift(node host.Host, validators []peer.ID, initialCall bool) int {
+func fetchNetworkTimeShift(node host.Host, initialCall bool) int {
+	validators := GetValidatorsList()
+
 	if len(validators) == 0 {
 		log.Fatalf("[ERROR] Missing validators list: %v\n", validators)
 	}
@@ -138,20 +140,19 @@ func getNetworkTimeShift(node host.Host, validators []peer.ID, initialCall bool)
 	}
 
 	median := utils.Median(timestamps)
-	timeShift := int(median)
+	timeShiftMsec := int(median)
 
 	// mostly applicable for "initialCall"
-	if timeShift > shared.MAX_INITIAL_CLOCK_SYNC {
-		log.Fatalf("[ERROR] Initial time drift too large: %d\n First, sync time on your system and then retry!\n", timeShift)
+	if timeShiftMsec > shared.MAX_INITIAL_CLOCK_SYNC {
+		log.Fatalf("[ERROR] Initial time drift too large: %d\n First, sync time on your system and then retry!\n", timeShiftMsec)
 	}
 
-	return timeShift
+	return timeShiftMsec
 }
 
 func AdjustNetworkTime(node host.Host, initialCall bool) {
-	validators := GetValidatorsList()
 	go func() {
-		timeShift := getNetworkTimeShift(node, validators, initialCall)
-		shared.SetNetworkTimeShift(timeShift)
+		timeShiftMsec := fetchNetworkTimeShift(node, initialCall)
+		shared.SetNetworkTimeShift(timeShiftMsec)
 	}()
 }

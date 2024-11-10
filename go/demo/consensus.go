@@ -150,6 +150,9 @@ type Conds struct {
 const consensusTopic = "baadal-consensus"
 const consensusPrefix = "/consensus/block"
 
+const RANDAO_START_BOUNDARY = 1000 // 1s mark
+const RANDAO_DEBUG_LOGS = false
+
 func condsFactory(block int, phase int, condsMap map[string]Conds) Conds {
 	key := fmt.Sprintf("/%d/phase%d", block, phase)
 	if condsMap[key].cond == nil {
@@ -226,7 +229,7 @@ func payloadDataValidator(msg *pubsub.Message) bool {
 	cond1 := payload.Block == slotNumber
 	cond2 := payload.Block == slotNumber+1 && timeLeftMsec < shared.MAX_CLOCK_DRIFT/2
 	if !cond1 && !cond2 {
-		log.Printf("Invalid block number: %d (%d, %d)\n", payload.Block, slotNumber, timeLeftMsec)
+		log.Printf("Invalid block number: %d (%d, %d) [%v %v]\n", payload.Block, slotNumber, timeLeftMsec, cond1, cond2)
 		return false
 	}
 
@@ -456,7 +459,7 @@ func createPhase5Payload(node host.Host, blockNumber int, datastore ds.Datastore
 	}
 
 	_, timeLeftMsec := shared.SlotInfo()
-	timeElapsedMsec := shared.SLOT_DURATION - timeLeftMsec
+	timeElapsedMsec := shared.SLOT_DURATION - RANDAO_START_BOUNDARY - timeLeftMsec
 
 	validatorsList := utils.Map(validators, func(v peer.ID) string {
 		return v.String()
@@ -645,6 +648,10 @@ func initBlockData(blockNumber int, datastore ds.Datastore) []peer.ID {
 
 // phase1: commit phase
 func triggerPhase1(entropy string, salt string, nextBlockNumber int, data string, topic *pubsub.Topic, datastore ds.Datastore) {
+	// if RANDAO_DEBUG_LOGS {
+	fmt.Println("triggerPhase1..", nextBlockNumber)
+	// }
+
 	shared.SetLatestBlockNumber(nextBlockNumber)
 
 	// var payload Phase1Payload
@@ -679,7 +686,9 @@ func triggerPhase1(entropy string, salt string, nextBlockNumber int, data string
 
 // phase2: transition (commit-close) phase
 func triggerPhase2(block int, node host.Host, topic *pubsub.Topic) {
-	fmt.Println("triggerPhase2..", block)
+	if RANDAO_DEBUG_LOGS {
+		fmt.Println("triggerPhase2..", block)
+	}
 
 	data := createPhase2Payload(node, block)
 	if data == "" {
@@ -695,7 +704,9 @@ func triggerPhase2(block int, node host.Host, topic *pubsub.Topic) {
 
 // phase3: reveal phase
 func triggerPhase3(block int, node host.Host, topic *pubsub.Topic, datastore ds.Datastore) {
-	fmt.Println("triggerPhase3..", block)
+	if RANDAO_DEBUG_LOGS {
+		fmt.Println("triggerPhase3..", block)
+	}
 
 	data := createPhase3Payload(node, block, datastore)
 	if data == "" {
@@ -711,7 +722,9 @@ func triggerPhase3(block int, node host.Host, topic *pubsub.Topic, datastore ds.
 
 // phase4: partial-tally phase
 func triggerPhase4(block int, node host.Host, topic *pubsub.Topic, datastore ds.Datastore) {
-	fmt.Println("triggerPhase4..", block)
+	if RANDAO_DEBUG_LOGS {
+		fmt.Println("triggerPhase4..", block)
+	}
 
 	data := createPhase4Payload(node, block, datastore)
 	if data == "" {
@@ -727,7 +740,9 @@ func triggerPhase4(block int, node host.Host, topic *pubsub.Topic, datastore ds.
 
 // phase5: full-tally phase
 func triggerPhase5(block int, node host.Host, topic *pubsub.Topic, datastore ds.Datastore) {
-	fmt.Println("triggerPhase5..", block)
+	if RANDAO_DEBUG_LOGS {
+		fmt.Println("triggerPhase5..", block)
+	}
 
 	data := createPhase5Payload(node, block, datastore)
 	if data == "" {
@@ -743,7 +758,9 @@ func triggerPhase5(block int, node host.Host, topic *pubsub.Topic, datastore ds.
 
 // phase6: VDF delay phase
 func triggerPhase6(block int, node host.Host, topic *pubsub.Topic, datastore ds.Datastore) {
-	fmt.Println("triggerPhase6..", block)
+	if RANDAO_DEBUG_LOGS {
+		fmt.Println("triggerPhase6..", block)
+	}
 
 	data := createPhase6Payload(node, block, datastore)
 	if data == "" {
@@ -758,7 +775,9 @@ func triggerPhase6(block int, node host.Host, topic *pubsub.Topic, datastore ds.
 }
 
 func randaoConsensus(block int, datastore ds.Datastore) {
-	fmt.Println("randaoConsensus..", block)
+	if RANDAO_DEBUG_LOGS {
+		fmt.Println("randaoConsensus..", block)
+	}
 
 	consensusKey := ds.NewKey(consensusPrefix + fmt.Sprintf("/%d/consensus", block))
 	consensusData, _ := datastore.Get(context.Background(), consensusKey)
@@ -768,7 +787,10 @@ func randaoConsensus(block int, datastore ds.Datastore) {
 
 	randaoMix := consensusObj.RandValue
 	// fmt.Println("InFavor:", consensusObj.InFavor)
+
+	// if RANDAO_DEBUG_LOGS {
 	fmt.Println("randaoMix:", randaoMix)
+	// }
 }
 
 func getStatusObj(block int, datastore ds.Datastore) (PhaseStatus, error) {
@@ -901,9 +923,11 @@ func consumePhase1(node host.Host, payload Phase1Payload, from peer.ID, datastor
 	hostKey := consensusPrefix + fmt.Sprintf("/%d/phase%d/%s", payload.Block, payload.Phase, node.ID().String())
 	selfAccountedFor := utils.Contains(allKeys, hostKey)
 
-	fmt.Println("<---- prefix:", len(validators), len(keys), prefix, from)
-	// fmt.Println("keys:", keys)
-	// fmt.Println("values:", values)
+	if RANDAO_DEBUG_LOGS {
+		fmt.Println("<---- prefix:", len(validators), len(keys), prefix, from)
+		// fmt.Println("keys:", keys)
+		// fmt.Println("values:", values)
+	}
 
 	// wait for 90th percentile response
 	if selfAccountedFor && len(keys)*10 >= len(validators)*9 {
@@ -1009,7 +1033,9 @@ func consumePhase2(node host.Host, payload PhasePayload, from peer.ID, datastore
 	hostKey := consensusPrefix + fmt.Sprintf("/%d/phase%d/%s", payload.Block, payload.Phase, node.ID().String())
 	selfAccountedFor := utils.Contains(allKeys, hostKey)
 
-	fmt.Println("<---- prefix:", len(validators), len(keys), prefix, from)
+	if RANDAO_DEBUG_LOGS {
+		fmt.Println("<---- prefix:", len(validators), len(keys), prefix, from)
+	}
 
 	// wait for 90th percentile response (among committed set from phase1)
 	if selfAccountedFor && len(keys)*100 >= len(validators)*81 {
@@ -1128,7 +1154,9 @@ func consumePhase3(node host.Host, payload Phase3Payload, from peer.ID, datastor
 	hostKey := consensusPrefix + fmt.Sprintf("/%d/phase%d/%s", payload.Block, payload.Phase, node.ID().String())
 	selfAccountedFor := utils.Contains(allKeys, hostKey)
 
-	fmt.Println("<---- prefix:", len(validators), len(keys), prefix, from)
+	if RANDAO_DEBUG_LOGS {
+		fmt.Println("<---- prefix:", len(validators), len(keys), prefix, from)
+	}
 
 	// wait for 3/4 responses
 	if selfAccountedFor && len(keys)*4 >= len(validators)*3 {
@@ -1212,7 +1240,9 @@ func consumePhase4(node host.Host, payload Phase4Payload, from peer.ID, datastor
 	hostKey := consensusPrefix + fmt.Sprintf("/%d/phase%d/%s", payload.Block, payload.Phase, node.ID().String())
 	selfAccountedFor := utils.Contains(allKeys, hostKey)
 
-	fmt.Println("<---- prefix:", len(validators), len(keys), prefix, from)
+	if RANDAO_DEBUG_LOGS {
+		fmt.Println("<---- prefix:", len(validators), len(keys), prefix, from)
+	}
 
 	// wait for 90th percentile response
 	if selfAccountedFor && len(keys)*10 >= len(validators)*9 {
@@ -1378,7 +1408,9 @@ func consumePhase5(node host.Host, payload Phase5Payload, from peer.ID, datastor
 		}
 	}
 
-	fmt.Println("<---- data:", len(validators), votesObj.Votes, "phase5", data.From)
+	if RANDAO_DEBUG_LOGS {
+		fmt.Println("<---- data:", len(validators), votesObj.Votes, "phase5", data.From)
+	}
 
 	voteMapData, _ := json.Marshal(voteMap)
 	elapsedMapData, _ := json.Marshal(elapsedMap)
@@ -1575,7 +1607,9 @@ func consumePhase6(node host.Host, payload Phase6Payload, from peer.ID, datastor
 
 	rvotesObj.Votes += 1
 
-	fmt.Println("<---- data:", len(validators), rvotesObj.Votes, "phase6", data.From)
+	if RANDAO_DEBUG_LOGS {
+		fmt.Println("<---- data:", len(validators), rvotesObj.Votes, "phase6", data.From)
+	}
 
 	if !isVerified {
 		log.Printf("[ERROR] VDF verification failed! x: %s y: %s t: %d\n", payload.Seed, payload.Output, payload.Steps)
@@ -1830,7 +1864,7 @@ func InitConsensusLoop(node host.Host, ps *pubsub.PubSub, datastore ds.Datastore
 
 	go func() {
 		_, initialDelayMsec := nextBlockInfo()
-		additionalDelay := shared.SLOT_DURATION
+		additionalDelay := shared.SLOT_DURATION // NOTE: additional time delay to allow network time sync completion
 		delay := initialDelayMsec + additionalDelay
 		time.Sleep(time.Duration(delay) * time.Millisecond)
 
@@ -1847,6 +1881,19 @@ func InitConsensusLoop(node host.Host, ps *pubsub.PubSub, datastore ds.Datastore
 				salt := utils.RandomHex(16)
 				data := createPhase1Payload(node, nextBlockNumber, entropy, salt)
 				<-ticker
+
+				// Move to randao start boundary (1s mark)
+				// NOTE: to change or disable start boundary, do not comment the following sleep statement.
+				// Rather, update the value of `RANDAO_START_BOUNDARY` constant
+				time.Sleep(RANDAO_START_BOUNDARY * time.Millisecond)
+
+				timeShiftMsec := shared.NetworkTimeShift()
+				if timeShiftMsec > shared.MAX_CLOCK_DRIFT {
+					log.Printf("[WARN] Current time drift too large: %d\n", timeShiftMsec)
+					// fmt.Println("Skipping new phase trigger..")
+					// continue
+				}
+
 				go func() {
 					triggerPhase1(entropy, salt, nextBlockNumber, data, topic, datastore)
 				}()
