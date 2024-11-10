@@ -88,7 +88,7 @@ func Node3() {
 
 	AdjustNetworkTime(node, true)
 
-	InitConsensusLoop(node, ps, datastore)
+	InitRandaoLoop(node, ps, datastore)
 
 	// ------------------
 

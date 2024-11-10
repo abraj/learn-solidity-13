@@ -147,8 +147,8 @@ type Conds struct {
 	cond *sync.Cond
 }
 
-const consensusTopic = "baadal-consensus"
-const consensusPrefix = "/consensus/block"
+const randaoTopic = "baadal-randao"
+const randaoPrefix = "/randao/block"
 
 const RANDAO_START_BOUNDARY = 1000 // 1s mark
 const RANDAO_DEBUG_LOGS = false
@@ -298,7 +298,7 @@ func createPhase3Payload(node host.Host, blockNumber int, datastore ds.Datastore
 }
 
 func createPhase4Payload(node host.Host, blockNumber int, datastore ds.Datastore) string {
-	prefix := consensusPrefix + fmt.Sprintf("/%d/phase3", blockNumber)
+	prefix := randaoPrefix + fmt.Sprintf("/%d/phase3", blockNumber)
 	_, values, err := QueryWithPrefix(datastore, prefix)
 	if err != nil {
 		log.Println(fmt.Sprintf("Error querying datastore with prefix: %s", prefix), err)
@@ -349,7 +349,7 @@ func createPhase5Payload(node host.Host, blockNumber int, datastore ds.Datastore
 
 	// handle tally for current node
 	{
-		prefix := consensusPrefix + fmt.Sprintf("/%d/phase3", blockNumber)
+		prefix := randaoPrefix + fmt.Sprintf("/%d/phase3", blockNumber)
 		_, values, err := QueryWithPrefix(datastore, prefix)
 		if err != nil {
 			log.Println(fmt.Sprintf("Error querying datastore with prefix: %s", prefix), err)
@@ -386,7 +386,7 @@ func createPhase5Payload(node host.Host, blockNumber int, datastore ds.Datastore
 
 	// aggregate votes: handle tally from incoming messages
 	{
-		prefix := consensusPrefix + fmt.Sprintf("/%d/phase4", blockNumber)
+		prefix := randaoPrefix + fmt.Sprintf("/%d/phase4", blockNumber)
 		_, values, err := QueryWithPrefix(datastore, prefix)
 		if err != nil {
 			log.Println(fmt.Sprintf("Error querying datastore with prefix: %s", prefix), err)
@@ -487,7 +487,7 @@ func createPhase6Payload(node host.Host, blockNumber int, datastore ds.Datastore
 	}
 
 	{
-		prefix := consensusPrefix + fmt.Sprintf("/%d/phase1", blockNumber)
+		prefix := randaoPrefix + fmt.Sprintf("/%d/phase1", blockNumber)
 		_, values, err := QueryWithPrefix(datastore, prefix)
 		if err != nil {
 			log.Println(fmt.Sprintf("Error querying datastore with prefix: %s", prefix), err)
@@ -512,7 +512,7 @@ func createPhase6Payload(node host.Host, blockNumber int, datastore ds.Datastore
 	}
 
 	{
-		prefix := consensusPrefix + fmt.Sprintf("/%d/phase3", blockNumber)
+		prefix := randaoPrefix + fmt.Sprintf("/%d/phase3", blockNumber)
 		_, values, err := QueryWithPrefix(datastore, prefix)
 		if err != nil {
 			log.Println(fmt.Sprintf("Error querying datastore with prefix: %s", prefix), err)
@@ -537,7 +537,7 @@ func createPhase6Payload(node host.Host, blockNumber int, datastore ds.Datastore
 		}
 	}
 
-	consensusKey := ds.NewKey(consensusPrefix + fmt.Sprintf("/%d/consensus", blockNumber))
+	consensusKey := ds.NewKey(randaoPrefix + fmt.Sprintf("/%d/consensus", blockNumber))
 	consensusData, err := datastore.Get(context.Background(), consensusKey)
 	if err != nil {
 		log.Println(fmt.Sprintf("Error getting data for key: %s", consensusKey), err)
@@ -623,21 +623,21 @@ func initBlockData(blockNumber int, datastore ds.Datastore) []peer.ID {
 	}
 	validatorsListStr := string(validatorsList)
 
-	validatorsKey := ds.NewKey(consensusPrefix + fmt.Sprintf("/%d/validators", blockNumber))
+	validatorsKey := ds.NewKey(randaoPrefix + fmt.Sprintf("/%d/validators", blockNumber))
 	if err := datastore.Put(context.Background(), validatorsKey, []byte(validatorsListStr)); err != nil {
 		log.Println(fmt.Sprintf("Error setting data for key: %s", validatorsKey), err)
 		return nil
 	}
 
 	votesObjStr, _ := json.Marshal(Votes{Votes: 0, VoteMap: "{}", ElapsedMap: "{}"})
-	votesKey := ds.NewKey(consensusPrefix + fmt.Sprintf("/%d/votes", blockNumber))
+	votesKey := ds.NewKey(randaoPrefix + fmt.Sprintf("/%d/votes", blockNumber))
 	if err := datastore.Put(context.Background(), votesKey, []byte(votesObjStr)); err != nil {
 		log.Println(fmt.Sprintf("Error setting data for key: %s", votesKey), err)
 		return nil
 	}
 
 	rvotesObjStr, _ := json.Marshal(RandaoVotes{Votes: 0, EntropyVotes: map[string]int{}, EntropyMap: map[string]string{}})
-	rvotesKey := ds.NewKey(consensusPrefix + fmt.Sprintf("/%d/randao-votes", blockNumber))
+	rvotesKey := ds.NewKey(randaoPrefix + fmt.Sprintf("/%d/randao-votes", blockNumber))
 	if err := datastore.Put(context.Background(), rvotesKey, []byte(rvotesObjStr)); err != nil {
 		log.Println(fmt.Sprintf("Error setting data for key: %s", rvotesKey), err)
 		return nil
@@ -779,7 +779,7 @@ func randaoConsensus(block int, datastore ds.Datastore) {
 		fmt.Println("randaoConsensus..", block)
 	}
 
-	consensusKey := ds.NewKey(consensusPrefix + fmt.Sprintf("/%d/consensus", block))
+	consensusKey := ds.NewKey(randaoPrefix + fmt.Sprintf("/%d/consensus", block))
 	consensusData, _ := datastore.Get(context.Background(), consensusKey)
 
 	var consensusObj ConsensusObj
@@ -794,7 +794,7 @@ func randaoConsensus(block int, datastore ds.Datastore) {
 }
 
 func getStatusObj(block int, datastore ds.Datastore) (PhaseStatus, error) {
-	statusKey := ds.NewKey(consensusPrefix + fmt.Sprintf("/%d/status", block))
+	statusKey := ds.NewKey(randaoPrefix + fmt.Sprintf("/%d/status", block))
 	statusData, err := datastore.Get(context.Background(), statusKey)
 	if err != nil {
 		statusObj := PhaseStatus{PhaseCompleted: 0}
@@ -822,7 +822,7 @@ func setStatusObj(statusObj PhaseStatus, block int, datastore ds.Datastore) erro
 		return err
 	}
 
-	statusKey := ds.NewKey(consensusPrefix + fmt.Sprintf("/%d/status", block))
+	statusKey := ds.NewKey(randaoPrefix + fmt.Sprintf("/%d/status", block))
 	if err := datastore.Put(context.Background(), statusKey, statusData); err != nil {
 		log.Println(fmt.Sprintf("Error putting value in datastore for key: %s", statusKey), err)
 		return err
@@ -832,7 +832,7 @@ func setStatusObj(statusObj PhaseStatus, block int, datastore ds.Datastore) erro
 }
 
 func getValidatorsFromStore(block int, datastore ds.Datastore) ([]peer.ID, error) {
-	validatorsKey := ds.NewKey(consensusPrefix + fmt.Sprintf("/%d/validators", block))
+	validatorsKey := ds.NewKey(randaoPrefix + fmt.Sprintf("/%d/validators", block))
 	validatorsList, err := datastore.Get(context.Background(), validatorsKey)
 	if err != nil {
 		validators := initBlockData(block, datastore)
@@ -881,7 +881,7 @@ func consumePhase1(node host.Host, payload Phase1Payload, from peer.ID, datastor
 
 	phase1Completed := statusObj.PhaseCompleted >= 1
 
-	p1Key := ds.NewKey(consensusPrefix + fmt.Sprintf("/%d/phase%d/%s", payload.Block, payload.Phase, from))
+	p1Key := ds.NewKey(randaoPrefix + fmt.Sprintf("/%d/phase%d/%s", payload.Block, payload.Phase, from))
 	_, err = datastore.Get(context.Background(), p1Key)
 	if err == nil {
 		log.Printf("Value already exists in datastore for key: %s", p1Key)
@@ -897,7 +897,7 @@ func consumePhase1(node host.Host, payload Phase1Payload, from peer.ID, datastor
 
 	// move below to avoid capturing laggard/delayed messages
 	p1DataStr := string(p1Data)
-	// p1Key := ds.NewKey(consensusPrefix + fmt.Sprintf("/%d/phase%d/%s", payload.Block, payload.Phase, from))
+	// p1Key := ds.NewKey(randaoPrefix + fmt.Sprintf("/%d/phase%d/%s", payload.Block, payload.Phase, from))
 	if err := datastore.Put(context.Background(), p1Key, []byte(p1DataStr)); err != nil {
 		log.Println(fmt.Sprintf("Error putting value in datastore for key: %s", p1Key), err)
 		return
@@ -910,7 +910,7 @@ func consumePhase1(node host.Host, payload Phase1Payload, from peer.ID, datastor
 	}
 
 	// query data needed for deciding progress
-	prefix := consensusPrefix + fmt.Sprintf("/%d/phase%d", payload.Block, payload.Phase)
+	prefix := randaoPrefix + fmt.Sprintf("/%d/phase%d", payload.Block, payload.Phase)
 	keys, _, err := QueryWithPrefix(datastore, prefix)
 	if err != nil {
 		log.Println(fmt.Sprintf("Error querying datastore with prefix: %s", prefix), err)
@@ -920,7 +920,7 @@ func consumePhase1(node host.Host, payload Phase1Payload, from peer.ID, datastor
 	allKeys := utils.Map(keys, func(key ds.Key) string {
 		return key.String()
 	})
-	hostKey := consensusPrefix + fmt.Sprintf("/%d/phase%d/%s", payload.Block, payload.Phase, node.ID().String())
+	hostKey := randaoPrefix + fmt.Sprintf("/%d/phase%d/%s", payload.Block, payload.Phase, node.ID().String())
 	selfAccountedFor := utils.Contains(allKeys, hostKey)
 
 	if RANDAO_DEBUG_LOGS {
@@ -977,7 +977,7 @@ func consumePhase2(node host.Host, payload PhasePayload, from peer.ID, datastore
 		return
 	}
 
-	p2Key := ds.NewKey(consensusPrefix + fmt.Sprintf("/%d/phase%d/%s", payload.Block, payload.Phase, from))
+	p2Key := ds.NewKey(randaoPrefix + fmt.Sprintf("/%d/phase%d/%s", payload.Block, payload.Phase, from))
 	_, err = datastore.Get(context.Background(), p2Key)
 	if err == nil {
 		log.Printf("Value already exists in datastore for key: %s", p2Key)
@@ -985,7 +985,7 @@ func consumePhase2(node host.Host, payload PhasePayload, from peer.ID, datastore
 	}
 
 	// `from` must be in committed set from phase1
-	p1Key := ds.NewKey(consensusPrefix + fmt.Sprintf("/%d/phase1/%s", payload.Block, from))
+	p1Key := ds.NewKey(randaoPrefix + fmt.Sprintf("/%d/phase1/%s", payload.Block, from))
 	p1MsgData, err := datastore.Get(context.Background(), p1Key)
 	if err != nil {
 		// log.Println(fmt.Sprintf("Error getting value from datastore for key: %s", p1Key), err)
@@ -1013,14 +1013,14 @@ func consumePhase2(node host.Host, payload PhasePayload, from peer.ID, datastore
 
 	// NOTE: currently, only valid (part of phase1 cut-off and already committed) phase2 messages are being stored
 	// Also, stop storing messages as soon as (phase2) cut-off is reached
-	// p2Key := ds.NewKey(consensusPrefix + fmt.Sprintf("/%d/phase%d/%s", payload.Block, payload.Phase, from))
+	// p2Key := ds.NewKey(randaoPrefix + fmt.Sprintf("/%d/phase%d/%s", payload.Block, payload.Phase, from))
 	if err := datastore.Put(context.Background(), p2Key, p2Data); err != nil {
 		log.Println(fmt.Sprintf("Error putting value in datastore for key: %s", p2Key), err)
 		return
 	}
 
 	// query data needed for deciding progress
-	prefix := consensusPrefix + fmt.Sprintf("/%d/phase%d", payload.Block, payload.Phase)
+	prefix := randaoPrefix + fmt.Sprintf("/%d/phase%d", payload.Block, payload.Phase)
 	keys, _, err := QueryWithPrefix(datastore, prefix)
 	if err != nil {
 		log.Println(fmt.Sprintf("Error querying datastore with prefix: %s", prefix), err)
@@ -1030,7 +1030,7 @@ func consumePhase2(node host.Host, payload PhasePayload, from peer.ID, datastore
 	allKeys := utils.Map(keys, func(key ds.Key) string {
 		return key.String()
 	})
-	hostKey := consensusPrefix + fmt.Sprintf("/%d/phase%d/%s", payload.Block, payload.Phase, node.ID().String())
+	hostKey := randaoPrefix + fmt.Sprintf("/%d/phase%d/%s", payload.Block, payload.Phase, node.ID().String())
 	selfAccountedFor := utils.Contains(allKeys, hostKey)
 
 	if RANDAO_DEBUG_LOGS {
@@ -1090,14 +1090,14 @@ func consumePhase3(node host.Host, payload Phase3Payload, from peer.ID, datastor
 
 	phase3Completed := statusObj.PhaseCompleted >= 3
 
-	p3Key := ds.NewKey(consensusPrefix + fmt.Sprintf("/%d/phase%d/%s", payload.Block, payload.Phase, from))
+	p3Key := ds.NewKey(randaoPrefix + fmt.Sprintf("/%d/phase%d/%s", payload.Block, payload.Phase, from))
 	_, err = datastore.Get(context.Background(), p3Key)
 	if err == nil {
 		log.Printf("Value already exists in datastore for key: %s", p3Key)
 		return
 	}
 
-	p1Key := ds.NewKey(consensusPrefix + fmt.Sprintf("/%d/phase1/%s", payload.Block, from))
+	p1Key := ds.NewKey(randaoPrefix + fmt.Sprintf("/%d/phase1/%s", payload.Block, from))
 	p1MsgData, err := datastore.Get(context.Background(), p1Key)
 	if err != nil {
 		// log.Println(fmt.Sprintf("Error getting value from datastore for key: %s", p1Key), err)
@@ -1129,7 +1129,7 @@ func consumePhase3(node host.Host, payload Phase3Payload, from peer.ID, datastor
 	// Assumption: phase3 message for a node (for a block number) arrives after phase1 message
 	// NOTE: phase3 message for a node is considered delayed if the corresponding phase1 message is delayed
 	p3DataStr := string(p3Data)
-	// p3Key := ds.NewKey(consensusPrefix + fmt.Sprintf("/%d/phase%d/%s", payload.Block, payload.Phase, from))
+	// p3Key := ds.NewKey(randaoPrefix + fmt.Sprintf("/%d/phase%d/%s", payload.Block, payload.Phase, from))
 	if err := datastore.Put(context.Background(), p3Key, []byte(p3DataStr)); err != nil {
 		log.Println(fmt.Sprintf("Error putting value in datastore for key: %s", p3Key), err)
 		return
@@ -1141,7 +1141,7 @@ func consumePhase3(node host.Host, payload Phase3Payload, from peer.ID, datastor
 	}
 
 	// query data needed for deciding progress
-	prefix := consensusPrefix + fmt.Sprintf("/%d/phase%d", payload.Block, payload.Phase)
+	prefix := randaoPrefix + fmt.Sprintf("/%d/phase%d", payload.Block, payload.Phase)
 	keys, _, err := QueryWithPrefix(datastore, prefix)
 	if err != nil {
 		log.Println(fmt.Sprintf("Error querying datastore with prefix: %s", prefix), err)
@@ -1151,7 +1151,7 @@ func consumePhase3(node host.Host, payload Phase3Payload, from peer.ID, datastor
 	allKeys := utils.Map(keys, func(key ds.Key) string {
 		return key.String()
 	})
-	hostKey := consensusPrefix + fmt.Sprintf("/%d/phase%d/%s", payload.Block, payload.Phase, node.ID().String())
+	hostKey := randaoPrefix + fmt.Sprintf("/%d/phase%d/%s", payload.Block, payload.Phase, node.ID().String())
 	selfAccountedFor := utils.Contains(allKeys, hostKey)
 
 	if RANDAO_DEBUG_LOGS {
@@ -1199,7 +1199,7 @@ func consumePhase4(node host.Host, payload Phase4Payload, from peer.ID, datastor
 
 	phase4Completed := statusObj.PhaseCompleted >= 4
 
-	p4Key := ds.NewKey(consensusPrefix + fmt.Sprintf("/%d/phase%d/%s", payload.Block, payload.Phase, from))
+	p4Key := ds.NewKey(randaoPrefix + fmt.Sprintf("/%d/phase%d/%s", payload.Block, payload.Phase, from))
 	_, err = datastore.Get(context.Background(), p4Key)
 	if err == nil {
 		log.Printf("Value already exists in datastore for key: %s", p4Key)
@@ -1215,7 +1215,7 @@ func consumePhase4(node host.Host, payload Phase4Payload, from peer.ID, datastor
 
 	// NOTE: keep storing phase4 messages
 	p4DataStr := string(p4Data)
-	// p4Key := ds.NewKey(consensusPrefix + fmt.Sprintf("/%d/phase%d/%s", payload.Block, payload.Phase, from))
+	// p4Key := ds.NewKey(randaoPrefix + fmt.Sprintf("/%d/phase%d/%s", payload.Block, payload.Phase, from))
 	if err := datastore.Put(context.Background(), p4Key, []byte(p4DataStr)); err != nil {
 		log.Println(fmt.Sprintf("Error putting value in datastore for key: %s", p4Key), err)
 		return
@@ -1227,7 +1227,7 @@ func consumePhase4(node host.Host, payload Phase4Payload, from peer.ID, datastor
 	}
 
 	// query data needed for deciding progress
-	prefix := consensusPrefix + fmt.Sprintf("/%d/phase%d", payload.Block, payload.Phase)
+	prefix := randaoPrefix + fmt.Sprintf("/%d/phase%d", payload.Block, payload.Phase)
 	keys, _, err := QueryWithPrefix(datastore, prefix)
 	if err != nil {
 		log.Println(fmt.Sprintf("Error querying datastore with prefix: %s", prefix), err)
@@ -1237,7 +1237,7 @@ func consumePhase4(node host.Host, payload Phase4Payload, from peer.ID, datastor
 	allKeys := utils.Map(keys, func(key ds.Key) string {
 		return key.String()
 	})
-	hostKey := consensusPrefix + fmt.Sprintf("/%d/phase%d/%s", payload.Block, payload.Phase, node.ID().String())
+	hostKey := randaoPrefix + fmt.Sprintf("/%d/phase%d/%s", payload.Block, payload.Phase, node.ID().String())
 	selfAccountedFor := utils.Contains(allKeys, hostKey)
 
 	if RANDAO_DEBUG_LOGS {
@@ -1300,7 +1300,7 @@ func consumePhase5(node host.Host, payload Phase5Payload, from peer.ID, datastor
 		return
 	}
 
-	p5Key := ds.NewKey(consensusPrefix + fmt.Sprintf("/%d/phase%d/%s", payload.Block, payload.Phase, from))
+	p5Key := ds.NewKey(randaoPrefix + fmt.Sprintf("/%d/phase%d/%s", payload.Block, payload.Phase, from))
 	_, err = datastore.Get(context.Background(), p5Key)
 	if err == nil {
 		log.Printf("Value already exists in datastore for key: %s", p5Key)
@@ -1316,7 +1316,7 @@ func consumePhase5(node host.Host, payload Phase5Payload, from peer.ID, datastor
 
 	// store phase5 response messages
 	p5DataStr := string(p5Data)
-	// p5Key := ds.NewKey(consensusPrefix + fmt.Sprintf("/%d/phase%d/%s", payload.Block, payload.Phase, from))
+	// p5Key := ds.NewKey(randaoPrefix + fmt.Sprintf("/%d/phase%d/%s", payload.Block, payload.Phase, from))
 	if err := datastore.Put(context.Background(), p5Key, []byte(p5DataStr)); err != nil {
 		log.Println(fmt.Sprintf("Error putting value in datastore for key: %s", p5Key), err)
 		return
@@ -1330,7 +1330,7 @@ func consumePhase5(node host.Host, payload Phase5Payload, from peer.ID, datastor
 	}
 
 	// query saved response messages
-	prefix := consensusPrefix + fmt.Sprintf("/%d/phase%d", payload.Block, payload.Phase)
+	prefix := randaoPrefix + fmt.Sprintf("/%d/phase%d", payload.Block, payload.Phase)
 	keys, values, err := QueryWithPrefix(datastore, prefix)
 	if err != nil {
 		log.Println(fmt.Sprintf("Error querying datastore with prefix: %s", prefix), err)
@@ -1352,7 +1352,7 @@ func consumePhase5(node host.Host, payload Phase5Payload, from peer.ID, datastor
 	}
 	validValidatorsLen := len(validators) - len(invalidValidators)
 
-	votesKey := ds.NewKey(consensusPrefix + fmt.Sprintf("/%d/votes", payload.Block))
+	votesKey := ds.NewKey(randaoPrefix + fmt.Sprintf("/%d/votes", payload.Block))
 	votesData, err := datastore.Get(context.Background(), votesKey)
 	if err != nil {
 		log.Println(fmt.Sprintf("Error getting data for key: %s", votesKey), err)
@@ -1423,7 +1423,7 @@ func consumePhase5(node host.Host, payload Phase5Payload, from peer.ID, datastor
 		return
 	}
 
-	// votesKey := ds.NewKey(consensusPrefix + fmt.Sprintf("/%d/votes", payload.Block))
+	// votesKey := ds.NewKey(randaoPrefix + fmt.Sprintf("/%d/votes", payload.Block))
 	if err := datastore.Put(context.Background(), votesKey, []byte(votesObjStr)); err != nil {
 		log.Println(fmt.Sprintf("Error setting data for key: %s", votesKey), err)
 		return
@@ -1470,7 +1470,7 @@ func consumePhase5(node host.Host, payload Phase5Payload, from peer.ID, datastor
 		elapsed := utils.Median(elapsedList)
 		consensusObj := ConsensusObj{InFavor: inFavorList, Against: againstList, Elapsed: elapsed, InvalidValidators: invalidValidators}
 		consensusObjData, _ := json.Marshal(consensusObj)
-		consensusKey := ds.NewKey(consensusPrefix + fmt.Sprintf("/%d/consensus", payload.Block))
+		consensusKey := ds.NewKey(randaoPrefix + fmt.Sprintf("/%d/consensus", payload.Block))
 		err := datastore.Put(context.Background(), consensusKey, consensusObjData)
 		if err != nil {
 			log.Println(fmt.Sprintf("Error putting data for key: %s", consensusKey), err)
@@ -1484,7 +1484,7 @@ func consumePhase5(node host.Host, payload Phase5Payload, from peer.ID, datastor
 	allKeys := utils.Map(keys, func(key ds.Key) string {
 		return key.String()
 	})
-	hostKey := consensusPrefix + fmt.Sprintf("/%d/phase%d/%s", payload.Block, payload.Phase, node.ID().String())
+	hostKey := randaoPrefix + fmt.Sprintf("/%d/phase%d/%s", payload.Block, payload.Phase, node.ID().String())
 	selfAccountedFor := utils.Contains(allKeys, hostKey)
 
 	if selfAccountedFor && retVal >= 0 {
@@ -1511,7 +1511,7 @@ func consumePhase6(node host.Host, payload Phase6Payload, from peer.ID, datastor
 		return
 	}
 
-	consensusKey := ds.NewKey(consensusPrefix + fmt.Sprintf("/%d/consensus", payload.Block))
+	consensusKey := ds.NewKey(randaoPrefix + fmt.Sprintf("/%d/consensus", payload.Block))
 	consensusData, err := datastore.Get(context.Background(), consensusKey)
 	if err != nil {
 		log.Println(fmt.Sprintf("Error getting data for key: %s", consensusKey), err)
@@ -1554,7 +1554,7 @@ func consumePhase6(node host.Host, payload Phase6Payload, from peer.ID, datastor
 		return
 	}
 
-	p6Key := ds.NewKey(consensusPrefix + fmt.Sprintf("/%d/phase%d/%s", payload.Block, payload.Phase, from))
+	p6Key := ds.NewKey(randaoPrefix + fmt.Sprintf("/%d/phase%d/%s", payload.Block, payload.Phase, from))
 	_, err = datastore.Get(context.Background(), p6Key)
 	if err == nil {
 		log.Printf("Value already exists in datastore for key: %s", p6Key)
@@ -1577,21 +1577,21 @@ func consumePhase6(node host.Host, payload Phase6Payload, from peer.ID, datastor
 
 	// store phase6 response messages
 	p6DataStr := string(p6Data)
-	// p6Key := ds.NewKey(consensusPrefix + fmt.Sprintf("/%d/phase%d/%s", payload.Block, payload.Phase, from))
+	// p6Key := ds.NewKey(randaoPrefix + fmt.Sprintf("/%d/phase%d/%s", payload.Block, payload.Phase, from))
 	if err := datastore.Put(context.Background(), p6Key, []byte(p6DataStr)); err != nil {
 		log.Println(fmt.Sprintf("Error putting value in datastore for key: %s", p6Key), err)
 		return
 	}
 
 	// query saved response messages
-	prefix := consensusPrefix + fmt.Sprintf("/%d/phase%d", payload.Block, payload.Phase)
+	prefix := randaoPrefix + fmt.Sprintf("/%d/phase%d", payload.Block, payload.Phase)
 	keys, _, err := QueryWithPrefix(datastore, prefix)
 	if err != nil {
 		log.Println(fmt.Sprintf("Error querying datastore with prefix: %s", prefix), err)
 		return
 	}
 
-	rvotesKey := ds.NewKey(consensusPrefix + fmt.Sprintf("/%d/randao-votes", payload.Block))
+	rvotesKey := ds.NewKey(randaoPrefix + fmt.Sprintf("/%d/randao-votes", payload.Block))
 	rvotesData, err := datastore.Get(context.Background(), rvotesKey)
 	if err != nil {
 		log.Println(fmt.Sprintf("Error getting data for key: %s", rvotesKey), err)
@@ -1631,7 +1631,7 @@ func consumePhase6(node host.Host, payload Phase6Payload, from peer.ID, datastor
 		return
 	}
 
-	// rvotesKey := ds.NewKey(consensusPrefix + fmt.Sprintf("/%d/randao-votes", payload.Block))
+	// rvotesKey := ds.NewKey(randaoPrefix + fmt.Sprintf("/%d/randao-votes", payload.Block))
 	if err := datastore.Put(context.Background(), rvotesKey, []byte(rvotesObjStr)); err != nil {
 		log.Println(fmt.Sprintf("Error setting data for key: %s", rvotesKey), err)
 		return
@@ -1662,7 +1662,7 @@ func consumePhase6(node host.Host, payload Phase6Payload, from peer.ID, datastor
 		// save consensus data
 		consensusObj.RandValue = consensusRandValue
 		consensusObjData, _ := json.Marshal(consensusObj)
-		consensusKey := ds.NewKey(consensusPrefix + fmt.Sprintf("/%d/consensus", payload.Block))
+		consensusKey := ds.NewKey(randaoPrefix + fmt.Sprintf("/%d/consensus", payload.Block))
 		err := datastore.Put(context.Background(), consensusKey, consensusObjData)
 		if err != nil {
 			log.Println(fmt.Sprintf("Error putting data for key: %s", consensusKey), err)
@@ -1676,7 +1676,7 @@ func consumePhase6(node host.Host, payload Phase6Payload, from peer.ID, datastor
 	allKeys := utils.Map(keys, func(key ds.Key) string {
 		return key.String()
 	})
-	hostKey := consensusPrefix + fmt.Sprintf("/%d/phase%d/%s", payload.Block, payload.Phase, node.ID().String())
+	hostKey := randaoPrefix + fmt.Sprintf("/%d/phase%d/%s", payload.Block, payload.Phase, node.ID().String())
 	selfAccountedFor := utils.Contains(allKeys, hostKey)
 
 	if selfAccountedFor && retVal >= 0 {
@@ -1840,7 +1840,7 @@ func listenConsensusTopic(node host.Host, topic *pubsub.Topic, datastore ds.Data
 	}(datastore)
 }
 
-func InitConsensusLoop(node host.Host, ps *pubsub.PubSub, datastore ds.Datastore) {
+func InitRandaoLoop(node host.Host, ps *pubsub.PubSub, datastore ds.Datastore) {
 	validators := GetValidatorsList()
 	if includes := utils.IsValidator(node.ID(), validators); !includes {
 		// current node is not a validator
@@ -1852,11 +1852,11 @@ func InitConsensusLoop(node host.Host, ps *pubsub.PubSub, datastore ds.Datastore
 		// unlike `msg.GetFrom()` which is the peer ID of the original publisher of the message
 		return payloadDataValidator(msg)
 	}
-	err := ps.RegisterTopicValidator(consensusTopic, payloadValidator)
+	err := ps.RegisterTopicValidator(randaoTopic, payloadValidator)
 	if err != nil {
 		panic(err)
 	}
-	topic, err := ps.Join(consensusTopic)
+	topic, err := ps.Join(randaoTopic)
 	if err != nil {
 		panic(err)
 	}
