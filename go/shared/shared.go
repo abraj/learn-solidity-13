@@ -14,7 +14,7 @@ const MAX_CLOCK_DRIFT = 100         // 100 ms
 const MAX_LAG = 50                  // 50 ms
 
 var networkTimeShift int
-var latestBlockNumber int
+var latestBlockNumber int = -1
 
 func SetNetworkTimeShift(timeShiftMsec int) {
 	alpha := 0.2   // smoothing factor
@@ -58,6 +58,9 @@ func SlotInfo() (slotNumber int, timeLeftMsec int) {
 }
 
 func GetLatestBlockNumber() int {
+	if latestBlockNumber < 0 {
+		log.Fatalf("[PANIC] latestBlockNumber not yet set: %d\n", latestBlockNumber)
+	}
 	return latestBlockNumber
 }
 
@@ -65,4 +68,30 @@ func SetLatestBlockNumber(newBlockNumber int) {
 	if newBlockNumber > latestBlockNumber {
 		latestBlockNumber = newBlockNumber
 	}
+}
+
+func NextBlockInfo(initialCall bool) (int, int) {
+	var nextBlockNumber int
+	var waitTimeMsec int
+
+	slotNumber, timeLeftMsec := SlotInfo()
+	timeElapsed := SLOT_DURATION - timeLeftMsec
+	if timeElapsed < MAX_LAG {
+		// submit for this block, you're already late!
+		nextBlockNumber = slotNumber
+		waitTimeMsec = 0
+	} else {
+		// schedule for next block
+		nextBlockNumber = slotNumber + 1
+		waitTimeMsec = timeLeftMsec
+	}
+
+	if !initialCall {
+		if nextBlockNumber <= GetLatestBlockNumber() {
+			log.Printf("[WARN] Skipping slot %d ..\n", nextBlockNumber)
+			return 0, timeLeftMsec + SLOT_DURATION
+		}
+	}
+
+	return nextBlockNumber, waitTimeMsec
 }
