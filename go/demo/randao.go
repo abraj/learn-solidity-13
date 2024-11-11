@@ -92,10 +92,10 @@ type RandaoPhase4Data struct {
 }
 
 type RandaoPhase5Data struct {
-	From    string `json:"from"`
-	IsValid bool   `json:"isValid"`
-	Elapsed int    `json:"elapsed"`
-	View    string `json:"view"`
+	From                 string `json:"from"`
+	ValidatorsMerkleHash string `json:"validatorsMerkleHash"`
+	Elapsed              int    `json:"elapsed"`
+	View                 string `json:"view"`
 }
 
 type RandaoPhase6Data struct {
@@ -1239,7 +1239,7 @@ func consumeRandaoPhase4(node host.Host, payload RandaoPhase4Payload, from peer.
 	}
 }
 
-func consumeRandaoPhase5(node host.Host, payload RandaoPhase5Payload, from peer.ID, datastore ds.Datastore, channels Channels, conds Conds, condsPrev Conds) {
+func consumeRandaoPhase5(node host.Host, payload RandaoPhase5Payload, from peer.ID, datastore ds.Datastore, channels Channels, conds Conds, condsPrev Conds, isValidator bool) {
 	validators, err := getValidatorsFromStore(payload.Block, datastore)
 	if err != nil {
 		return
@@ -1268,7 +1268,7 @@ func consumeRandaoPhase5(node host.Host, payload RandaoPhase5Payload, from peer.
 		return
 	}
 
-	if statusObj.PhaseCompleted < 4 {
+	if isValidator && statusObj.PhaseCompleted < 4 {
 		condsPrev.cond.L.Lock()
 		condsPrev.cond.Wait()
 		condsPrev.cond.L.Unlock()
@@ -1288,7 +1288,7 @@ func consumeRandaoPhase5(node host.Host, payload RandaoPhase5Payload, from peer.
 		return
 	}
 
-	data := RandaoPhase5Data{From: payload.From, IsValid: isValidatorsMatch, Elapsed: payload.Elapsed, View: payload.View}
+	data := RandaoPhase5Data{From: payload.From, ValidatorsMerkleHash: payload.ValidatorsMerkleHash, Elapsed: payload.Elapsed, View: payload.View}
 	p5Data, err := json.Marshal(data)
 	if err != nil {
 		log.Println("Error marshalling JSON:", err)
@@ -1322,12 +1322,14 @@ func consumeRandaoPhase5(node host.Host, payload RandaoPhase5Payload, from peer.
 	for _, value := range values {
 		var p5Data RandaoPhase5Data
 		json.Unmarshal([]byte(value), &p5Data)
-		if !p5Data.IsValid {
+		isValidatorsMatch := p5Data.ValidatorsMerkleHash == validatorsMerkleHash
+		if !isValidatorsMatch {
 			invalidValidators = append(invalidValidators, p5Data.From)
 		}
 	}
 
 	if len(invalidValidators)*3 > len(validators) {
+		log.Printf("Possibly current node's validator list not up-to-date: %v\n", validators)
 		log.Printf("Too many invalid validators: %d (%d)\n", len(invalidValidators), len(validators))
 		return
 	}
@@ -1468,7 +1470,7 @@ func consumeRandaoPhase5(node host.Host, payload RandaoPhase5Payload, from peer.
 	hostKey := randaoPrefix + fmt.Sprintf("/%d/phase%d/%s", payload.Block, payload.Phase, node.ID().String())
 	selfAccountedFor := utils.Contains(allKeys, hostKey)
 
-	if selfAccountedFor && retVal >= 0 {
+	if (!isValidator || selfAccountedFor) && retVal >= 0 {
 		statusObj.PhaseCompleted = 5
 		err := setRandaoStatusObj(statusObj, payload.Block, datastore)
 		if err != nil {
@@ -1481,7 +1483,7 @@ func consumeRandaoPhase5(node host.Host, payload RandaoPhase5Payload, from peer.
 	}
 }
 
-func consumeRandaoPhase6(node host.Host, payload RandaoPhase6Payload, from peer.ID, datastore ds.Datastore, channels Channels, conds Conds, condsPrev Conds) {
+func consumeRandaoPhase6(node host.Host, payload RandaoPhase6Payload, from peer.ID, datastore ds.Datastore, channels Channels, conds Conds, condsPrev Conds, isValidator bool) {
 	validators, err := getValidatorsFromStore(payload.Block, datastore)
 	if err != nil {
 		return
@@ -1660,7 +1662,7 @@ func consumeRandaoPhase6(node host.Host, payload RandaoPhase6Payload, from peer.
 	hostKey := randaoPrefix + fmt.Sprintf("/%d/phase%d/%s", payload.Block, payload.Phase, node.ID().String())
 	selfAccountedFor := utils.Contains(allKeys, hostKey)
 
-	if selfAccountedFor && retVal >= 0 {
+	if (!isValidator || selfAccountedFor) && retVal >= 0 {
 		statusObj.PhaseCompleted = 6
 		err := setRandaoStatusObj(statusObj, payload.Block, datastore)
 		if err != nil {
@@ -1673,7 +1675,7 @@ func consumeRandaoPhase6(node host.Host, payload RandaoPhase6Payload, from peer.
 	}
 }
 
-func listenRandaoTopic(node host.Host, topic *pubsub.Topic, datastore ds.Datastore) {
+func listenRandaoTopic(node host.Host, topic *pubsub.Topic, datastore ds.Datastore, isValidator bool) {
 	subs, err := topic.Subscribe()
 	if err != nil {
 		panic(err)
@@ -1708,8 +1710,14 @@ func listenRandaoTopic(node host.Host, topic *pubsub.Topic, datastore ds.Datasto
 			}
 			ongoingPhase := statusObj.PhaseCompleted + 1
 			maxAllowedPhase := ongoingPhase + 1
+			consensusPhase := 5 // consensus (5), randao mix (6)
 
-			if _payload.Phase > maxAllowedPhase {
+			if !isValidator && _payload.Phase < consensusPhase {
+				// only allow last (consensus) phase message for non-validators
+				continue
+			}
+
+			if isValidator && _payload.Phase > maxAllowedPhase {
 				log.Printf("[WARN] Ignoring out-of-phase message from %s phase: %d block: %d\n", _payload.From, _payload.Phase, _payload.Block)
 				continue
 			} else if _payload.Phase == 1 {
@@ -1788,13 +1796,15 @@ func listenRandaoTopic(node host.Host, topic *pubsub.Topic, datastore ds.Datasto
 
 				// keep it outside goroutine for thread-safety of map
 				channels := channelsFactory(payload.Block, payload.Phase, channelsMap, func(block int) {
-					triggerRandaoPhase6(block, node, topic, datastore)
+					if isValidator {
+						triggerRandaoPhase6(block, node, topic, datastore)
+					}
 				})
 
 				conds := condsFactory(payload.Block, payload.Phase, condsMap)
 				condsPrev := condsFactory(payload.Block, payload.Phase-1, condsMap)
 				go func() {
-					consumeRandaoPhase5(node, payload, from, datastore, channels, conds, condsPrev)
+					consumeRandaoPhase5(node, payload, from, datastore, channels, conds, condsPrev, isValidator)
 				}()
 			} else if _payload.Phase == 6 {
 				var payload RandaoPhase6Payload
@@ -1812,7 +1822,7 @@ func listenRandaoTopic(node host.Host, topic *pubsub.Topic, datastore ds.Datasto
 				conds := condsFactory(payload.Block, payload.Phase, condsMap)
 				condsPrev := condsFactory(payload.Block, payload.Phase-1, condsMap)
 				go func() {
-					consumeRandaoPhase6(node, payload, from, datastore, channels, conds, condsPrev)
+					consumeRandaoPhase6(node, payload, from, datastore, channels, conds, condsPrev, isValidator)
 				}()
 			} else {
 				log.Fatalf("[ERROR] Unhandled phase value: %d (%d)\n", _payload.Phase, _payload.Block)
@@ -1823,10 +1833,7 @@ func listenRandaoTopic(node host.Host, topic *pubsub.Topic, datastore ds.Datasto
 
 func InitRandaoLoop(node host.Host, ps *pubsub.PubSub, datastore ds.Datastore) {
 	validators := GetValidatorsList()
-	if includes := utils.IsValidator(node.ID(), validators); !includes {
-		// current node is not a validator
-		return
-	}
+	isValidator := utils.IsValidator(node.ID(), validators)
 
 	payloadValidator := func(ctx context.Context, pid peer.ID, msg *pubsub.Message) bool {
 		// NOTE: `pid` could be an intermediary or relaying node, not necessarily the original publisher
@@ -1841,7 +1848,14 @@ func InitRandaoLoop(node host.Host, ps *pubsub.PubSub, datastore ds.Datastore) {
 	if err != nil {
 		panic(err)
 	}
-	listenRandaoTopic(node, topic, datastore)
+
+	// applicable (partially) for non-validators also
+	listenRandaoTopic(node, topic, datastore, isValidator)
+
+	if !isValidator {
+		// current node is not a validator
+		return
+	}
 
 	go func() {
 		initialCall := true
