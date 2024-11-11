@@ -110,6 +110,7 @@ type RandaoPhaseStatus struct {
 	Entropy        string `json:"entropy"`
 	Salt           string `json:"salt"`
 	PhaseCompleted int    `json:"phase"`
+	Timeout        bool   `json:"timeout"`
 }
 
 type RandaoVotes1 struct {
@@ -163,7 +164,13 @@ func condsFactory(block int, phase int, condsMap map[string]Conds) Conds {
 	return condsMap[key]
 }
 
-func channelsFactory(block int, phase int, channelsMap map[string]Channels, onQuorum func(block int)) Channels {
+func releaseAllConds(condsMap map[string]Conds) {
+	for _, conds := range condsMap {
+		conds.cond.Broadcast()
+	}
+}
+
+func channelsFactory(block int, phase int, datastore ds.Datastore, channelsMap map[string]Channels, condsMap map[string]Conds, onQuorum func(block int)) Channels {
 	key := fmt.Sprintf("/%d/phase%d", block, phase)
 	if channelsMap[key].quorum == nil {
 		timer := time.NewTimer(shared.PHASE_DURATION * time.Millisecond)
@@ -180,9 +187,12 @@ func channelsFactory(block int, phase int, channelsMap map[string]Channels, onQu
 			defer close(quorum)
 			select {
 			case block := <-quorum:
+				conds := condsFactory(block, phase, condsMap)
+				conds.cond.Broadcast()
+
 				if block == 0 {
 					// impasse (no consensus)
-					fmt.Println(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>> impasse")
+					fmt.Println(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>> no consensus")
 				} else {
 					// quorum achieved
 					go func() {
@@ -190,6 +200,13 @@ func channelsFactory(block int, phase int, channelsMap map[string]Channels, onQu
 					}()
 				}
 			case <-timer.C:
+				statusObj, _ := getRandaoStatusObj(block, datastore)
+				statusObj.Timeout = true
+				setRandaoStatusObj(statusObj, block, datastore)
+
+				// release waiting conds (for all phases)
+				releaseAllConds(condsMap)
+
 				// timeout
 				fmt.Println(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>> timeout")
 			}
@@ -835,7 +852,7 @@ func getValidatorsFromStore(block int, datastore ds.Datastore) ([]peer.ID, error
 	return validators, nil
 }
 
-func consumeRandaoPhase1(node host.Host, payload RandaoPhase1Payload, from peer.ID, datastore ds.Datastore, channels Channels, conds Conds) {
+func consumeRandaoPhase1(node host.Host, payload RandaoPhase1Payload, from peer.ID, datastore ds.Datastore, channels Channels) {
 	validators, err := getValidatorsFromStore(payload.Block, datastore)
 	if err != nil {
 		return
@@ -857,6 +874,9 @@ func consumeRandaoPhase1(node host.Host, payload RandaoPhase1Payload, from peer.
 
 	statusObj, err := getRandaoStatusObj(payload.Block, datastore)
 	if err != nil {
+		return
+	}
+	if statusObj.Timeout {
 		return
 	}
 
@@ -917,7 +937,6 @@ func consumeRandaoPhase1(node host.Host, payload RandaoPhase1Payload, from peer.
 		if err != nil {
 			return
 		}
-		conds.cond.Broadcast()
 
 		// close phase1
 		channels.quorum <- payload.Block
@@ -926,7 +945,7 @@ func consumeRandaoPhase1(node host.Host, payload RandaoPhase1Payload, from peer.
 	// TODO: cleanup memory store, datastore, etc. for each /block-number
 }
 
-func consumeRandaoPhase2(node host.Host, payload RandaoPhasePayload, from peer.ID, datastore ds.Datastore, channels Channels, conds Conds, condsPrev Conds) {
+func consumeRandaoPhase2(node host.Host, payload RandaoPhasePayload, from peer.ID, datastore ds.Datastore, channels Channels, condsPrev Conds) {
 	validators, err := getValidatorsFromStore(payload.Block, datastore)
 	if err != nil {
 		return
@@ -944,11 +963,19 @@ func consumeRandaoPhase2(node host.Host, payload RandaoPhasePayload, from peer.I
 	if err != nil {
 		return
 	}
+	if statusObj.Timeout {
+		return
+	}
 
 	if statusObj.PhaseCompleted < 1 {
 		condsPrev.cond.L.Lock()
 		condsPrev.cond.Wait()
 		condsPrev.cond.L.Unlock()
+	}
+
+	statusObj, _ = getRandaoStatusObj(payload.Block, datastore)
+	if statusObj.Timeout {
+		return
 	}
 
 	phase2Completed := statusObj.PhaseCompleted >= 2
@@ -1025,14 +1052,13 @@ func consumeRandaoPhase2(node host.Host, payload RandaoPhasePayload, from peer.I
 		if err != nil {
 			return
 		}
-		conds.cond.Broadcast()
 
 		// close phase2
 		channels.quorum <- payload.Block
 	}
 }
 
-func consumeRandaoPhase3(node host.Host, payload RandaoPhase3Payload, from peer.ID, datastore ds.Datastore, channels Channels, conds Conds, condsPrev Conds) {
+func consumeRandaoPhase3(node host.Host, payload RandaoPhase3Payload, from peer.ID, datastore ds.Datastore, channels Channels, condsPrev Conds) {
 	validators, err := getValidatorsFromStore(payload.Block, datastore)
 	if err != nil {
 		return
@@ -1062,11 +1088,19 @@ func consumeRandaoPhase3(node host.Host, payload RandaoPhase3Payload, from peer.
 	if err != nil {
 		return
 	}
+	if statusObj.Timeout {
+		return
+	}
 
 	if statusObj.PhaseCompleted < 2 {
 		condsPrev.cond.L.Lock()
 		condsPrev.cond.Wait()
 		condsPrev.cond.L.Unlock()
+	}
+
+	statusObj, _ = getRandaoStatusObj(payload.Block, datastore)
+	if statusObj.Timeout {
+		return
 	}
 
 	phase3Completed := statusObj.PhaseCompleted >= 3
@@ -1146,14 +1180,13 @@ func consumeRandaoPhase3(node host.Host, payload RandaoPhase3Payload, from peer.
 		if err != nil {
 			return
 		}
-		conds.cond.Broadcast()
 
 		// close phase3
 		channels.quorum <- payload.Block
 	}
 }
 
-func consumeRandaoPhase4(node host.Host, payload RandaoPhase4Payload, from peer.ID, datastore ds.Datastore, channels Channels, conds Conds, condsPrev Conds) {
+func consumeRandaoPhase4(node host.Host, payload RandaoPhase4Payload, from peer.ID, datastore ds.Datastore, channels Channels, condsPrev Conds) {
 	validators, err := getValidatorsFromStore(payload.Block, datastore)
 	if err != nil {
 		return
@@ -1171,11 +1204,19 @@ func consumeRandaoPhase4(node host.Host, payload RandaoPhase4Payload, from peer.
 	if err != nil {
 		return
 	}
+	if statusObj.Timeout {
+		return
+	}
 
 	if statusObj.PhaseCompleted < 3 {
 		condsPrev.cond.L.Lock()
 		condsPrev.cond.Wait()
 		condsPrev.cond.L.Unlock()
+	}
+
+	statusObj, _ = getRandaoStatusObj(payload.Block, datastore)
+	if statusObj.Timeout {
+		return
 	}
 
 	phase4Completed := statusObj.PhaseCompleted >= 4
@@ -1232,14 +1273,13 @@ func consumeRandaoPhase4(node host.Host, payload RandaoPhase4Payload, from peer.
 		if err != nil {
 			return
 		}
-		conds.cond.Broadcast()
 
 		// close phase4
 		channels.quorum <- payload.Block
 	}
 }
 
-func consumeRandaoPhase5(node host.Host, payload RandaoPhase5Payload, from peer.ID, datastore ds.Datastore, channels Channels, conds Conds, condsPrev Conds, isValidator bool) {
+func consumeRandaoPhase5(node host.Host, payload RandaoPhase5Payload, from peer.ID, datastore ds.Datastore, channels Channels, condsPrev Conds, isValidator bool) {
 	validators, err := getValidatorsFromStore(payload.Block, datastore)
 	if err != nil {
 		return
@@ -1267,11 +1307,19 @@ func consumeRandaoPhase5(node host.Host, payload RandaoPhase5Payload, from peer.
 	if err != nil {
 		return
 	}
+	if statusObj.Timeout {
+		return
+	}
 
 	if isValidator && statusObj.PhaseCompleted < 4 {
 		condsPrev.cond.L.Lock()
 		condsPrev.cond.Wait()
 		condsPrev.cond.L.Unlock()
+	}
+
+	statusObj, _ = getRandaoStatusObj(payload.Block, datastore)
+	if statusObj.Timeout {
+		return
 	}
 
 	phase5Completed := statusObj.PhaseCompleted >= 5
@@ -1476,14 +1524,13 @@ func consumeRandaoPhase5(node host.Host, payload RandaoPhase5Payload, from peer.
 		if err != nil {
 			return
 		}
-		conds.cond.Broadcast()
 
 		// close phase5
 		channels.quorum <- retVal
 	}
 }
 
-func consumeRandaoPhase6(node host.Host, payload RandaoPhase6Payload, from peer.ID, datastore ds.Datastore, channels Channels, conds Conds, condsPrev Conds, isValidator bool) {
+func consumeRandaoPhase6(node host.Host, payload RandaoPhase6Payload, from peer.ID, datastore ds.Datastore, channels Channels, condsPrev Conds, isValidator bool) {
 	validators, err := getValidatorsFromStore(payload.Block, datastore)
 	if err != nil {
 		return
@@ -1523,11 +1570,19 @@ func consumeRandaoPhase6(node host.Host, payload RandaoPhase6Payload, from peer.
 	if err != nil {
 		return
 	}
+	if statusObj.Timeout {
+		return
+	}
 
 	if statusObj.PhaseCompleted < 5 {
 		condsPrev.cond.L.Lock()
 		condsPrev.cond.Wait()
 		condsPrev.cond.L.Unlock()
+	}
+
+	statusObj, _ = getRandaoStatusObj(payload.Block, datastore)
+	if statusObj.Timeout {
+		return
 	}
 
 	phase6Completed := statusObj.PhaseCompleted >= 6
@@ -1668,7 +1723,6 @@ func consumeRandaoPhase6(node host.Host, payload RandaoPhase6Payload, from peer.
 		if err != nil {
 			return
 		}
-		conds.cond.Broadcast()
 
 		// close phase6
 		channels.quorum <- retVal
@@ -1729,26 +1783,24 @@ func listenRandaoTopic(node host.Host, topic *pubsub.Topic, datastore ds.Datasto
 				}
 
 				// keep it outside goroutine for thread-safety of map
-				channels := channelsFactory(payload.Block, payload.Phase, channelsMap, func(block int) {
+				channels := channelsFactory(payload.Block, payload.Phase, datastore, channelsMap, condsMap, func(block int) {
 					triggerRandaoPhase2(block, node, topic)
 				})
 
-				conds := condsFactory(payload.Block, payload.Phase, condsMap)
 				go func() {
-					consumeRandaoPhase1(node, payload, from, datastore, channels, conds)
+					consumeRandaoPhase1(node, payload, from, datastore, channels)
 				}()
 			} else if _payload.Phase == 2 {
 				payload := _payload
 
 				// keep it outside goroutine for thread-safety of map
-				channels := channelsFactory(payload.Block, payload.Phase, channelsMap, func(block int) {
+				channels := channelsFactory(payload.Block, payload.Phase, datastore, channelsMap, condsMap, func(block int) {
 					triggerRandaoPhase3(block, node, topic, datastore)
 				})
 
-				conds := condsFactory(payload.Block, payload.Phase, condsMap)
 				condsPrev := condsFactory(payload.Block, payload.Phase-1, condsMap)
 				go func() {
-					consumeRandaoPhase2(node, payload, from, datastore, channels, conds, condsPrev)
+					consumeRandaoPhase2(node, payload, from, datastore, channels, condsPrev)
 				}()
 			} else if _payload.Phase == 3 {
 				var payload RandaoPhase3Payload
@@ -1759,14 +1811,13 @@ func listenRandaoTopic(node host.Host, topic *pubsub.Topic, datastore ds.Datasto
 				}
 
 				// keep it outside goroutine for thread-safety of map
-				channels := channelsFactory(payload.Block, payload.Phase, channelsMap, func(block int) {
+				channels := channelsFactory(payload.Block, payload.Phase, datastore, channelsMap, condsMap, func(block int) {
 					triggerRandaoPhase4(block, node, topic, datastore)
 				})
 
-				conds := condsFactory(payload.Block, payload.Phase, condsMap)
 				condsPrev := condsFactory(payload.Block, payload.Phase-1, condsMap)
 				go func() {
-					consumeRandaoPhase3(node, payload, from, datastore, channels, conds, condsPrev)
+					consumeRandaoPhase3(node, payload, from, datastore, channels, condsPrev)
 				}()
 			} else if _payload.Phase == 4 {
 				var payload RandaoPhase4Payload
@@ -1777,14 +1828,13 @@ func listenRandaoTopic(node host.Host, topic *pubsub.Topic, datastore ds.Datasto
 				}
 
 				// keep it outside goroutine for thread-safety of map
-				channels := channelsFactory(payload.Block, payload.Phase, channelsMap, func(block int) {
+				channels := channelsFactory(payload.Block, payload.Phase, datastore, channelsMap, condsMap, func(block int) {
 					triggerRandaoPhase5(block, node, topic, datastore)
 				})
 
-				conds := condsFactory(payload.Block, payload.Phase, condsMap)
 				condsPrev := condsFactory(payload.Block, payload.Phase-1, condsMap)
 				go func() {
-					consumeRandaoPhase4(node, payload, from, datastore, channels, conds, condsPrev)
+					consumeRandaoPhase4(node, payload, from, datastore, channels, condsPrev)
 				}()
 			} else if _payload.Phase == 5 {
 				var payload RandaoPhase5Payload
@@ -1795,16 +1845,15 @@ func listenRandaoTopic(node host.Host, topic *pubsub.Topic, datastore ds.Datasto
 				}
 
 				// keep it outside goroutine for thread-safety of map
-				channels := channelsFactory(payload.Block, payload.Phase, channelsMap, func(block int) {
+				channels := channelsFactory(payload.Block, payload.Phase, datastore, channelsMap, condsMap, func(block int) {
 					if isValidator {
 						triggerRandaoPhase6(block, node, topic, datastore)
 					}
 				})
 
-				conds := condsFactory(payload.Block, payload.Phase, condsMap)
 				condsPrev := condsFactory(payload.Block, payload.Phase-1, condsMap)
 				go func() {
-					consumeRandaoPhase5(node, payload, from, datastore, channels, conds, condsPrev, isValidator)
+					consumeRandaoPhase5(node, payload, from, datastore, channels, condsPrev, isValidator)
 				}()
 			} else if _payload.Phase == 6 {
 				var payload RandaoPhase6Payload
@@ -1815,14 +1864,13 @@ func listenRandaoTopic(node host.Host, topic *pubsub.Topic, datastore ds.Datasto
 				}
 
 				// keep it outside goroutine for thread-safety of map
-				channels := channelsFactory(payload.Block, payload.Phase, channelsMap, func(block int) {
+				channels := channelsFactory(payload.Block, payload.Phase, datastore, channelsMap, condsMap, func(block int) {
 					consumeRandaoMix(block, datastore)
 				})
 
-				conds := condsFactory(payload.Block, payload.Phase, condsMap)
 				condsPrev := condsFactory(payload.Block, payload.Phase-1, condsMap)
 				go func() {
-					consumeRandaoPhase6(node, payload, from, datastore, channels, conds, condsPrev, isValidator)
+					consumeRandaoPhase6(node, payload, from, datastore, channels, condsPrev, isValidator)
 				}()
 			} else {
 				log.Fatalf("[ERROR] Unhandled phase value: %d (%d)\n", _payload.Phase, _payload.Block)
