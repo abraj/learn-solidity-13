@@ -607,16 +607,16 @@ func initBlockData(blockNumber int, datastore ds.Datastore) []peer.ID {
 		return nil
 	}
 
-	votesObjStr, _ := json.Marshal(RandaoVotes1{Votes: 0, VoteMap: "{}", ElapsedMap: "{}"})
+	votesObjData, _ := json.Marshal(RandaoVotes1{Votes: 0, VoteMap: "{}", ElapsedMap: "{}"})
 	votesKey := ds.NewKey(randaoPrefix + fmt.Sprintf("/%d/votes", blockNumber))
-	if err := datastore.Put(context.Background(), votesKey, []byte(votesObjStr)); err != nil {
+	if err := datastore.Put(context.Background(), votesKey, []byte(votesObjData)); err != nil {
 		log.Println(fmt.Sprintf("Error setting data for key: %s", votesKey), err)
 		return nil
 	}
 
-	rvotesObjStr, _ := json.Marshal(RandaoVotes2{Votes: 0, EntropyVotes: map[string]int{}, EntropyMap: map[string]string{}})
+	rvotesObjData, _ := json.Marshal(RandaoVotes2{Votes: 0, EntropyVotes: map[string]int{}, EntropyMap: map[string]string{}})
 	rvotesKey := ds.NewKey(randaoPrefix + fmt.Sprintf("/%d/randao-votes", blockNumber))
-	if err := datastore.Put(context.Background(), rvotesKey, []byte(rvotesObjStr)); err != nil {
+	if err := datastore.Put(context.Background(), rvotesKey, []byte(rvotesObjData)); err != nil {
 		log.Println(fmt.Sprintf("Error setting data for key: %s", rvotesKey), err)
 		return nil
 	}
@@ -1398,14 +1398,14 @@ func consumeRandaoPhase5(node host.Host, payload RandaoPhase5Payload, from peer.
 	votesObj.VoteMap = string(voteMapData)
 	votesObj.ElapsedMap = string(elapsedMapData)
 
-	votesObjStr, err := json.Marshal(votesObj)
+	votesObjData, err := json.Marshal(votesObj)
 	if err != nil {
 		fmt.Printf("[WARN] Unable to marshal votesObj: %v\n", votesObj)
 		return
 	}
 
 	// votesKey := ds.NewKey(randaoPrefix + fmt.Sprintf("/%d/votes", payload.Block))
-	if err := datastore.Put(context.Background(), votesKey, []byte(votesObjStr)); err != nil {
+	if err := datastore.Put(context.Background(), votesKey, []byte(votesObjData)); err != nil {
 		log.Println(fmt.Sprintf("Error setting data for key: %s", votesKey), err)
 		return
 	}
@@ -1510,7 +1510,7 @@ func consumeRandaoPhase6(node host.Host, payload RandaoPhase6Payload, from peer.
 	validValidatorsLen := len(validators) - len(invalidValidators)
 
 	if utils.Contains(invalidValidators, from.String()) {
-		log.Printf("[WARN] Invalid validators list at this validator: %s\n", from)
+		log.Printf("[WARN] Invalid 'validators list' at this validator: %s\n", from)
 		return
 	}
 
@@ -1606,14 +1606,14 @@ func consumeRandaoPhase6(node host.Host, payload RandaoPhase6Payload, from peer.
 		rvotesObj.EntropyMap[rKey] = payload.Output
 	}
 
-	rvotesObjStr, err := json.Marshal(rvotesObj)
+	rvotesObjData, err := json.Marshal(rvotesObj)
 	if err != nil {
 		fmt.Printf("[WARN] Unable to marshal votesObj: %v\n", rvotesObj)
 		return
 	}
 
 	// rvotesKey := ds.NewKey(randaoPrefix + fmt.Sprintf("/%d/randao-votes", payload.Block))
-	if err := datastore.Put(context.Background(), rvotesKey, []byte(rvotesObjStr)); err != nil {
+	if err := datastore.Put(context.Background(), rvotesKey, []byte(rvotesObjData)); err != nil {
 		log.Println(fmt.Sprintf("Error setting data for key: %s", rvotesKey), err)
 		return
 	}
@@ -1640,7 +1640,7 @@ func consumeRandaoPhase6(node host.Host, payload RandaoPhase6Payload, from peer.
 		// consensus
 		retVal = payload.Block
 
-		// save consensus data
+		// save consensus data (randao mix)
 		consensusObj.RandValue = consensusRandValue
 		consensusObjData, _ := json.Marshal(consensusObj)
 		consensusKey := ds.NewKey(randaoPrefix + fmt.Sprintf("/%d/consensus", payload.Block))

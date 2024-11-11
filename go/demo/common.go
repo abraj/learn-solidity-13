@@ -130,6 +130,7 @@ func fetchNetworkTimeShift(node host.Host, initialCall bool) int {
 		if utils.IsValidator(node.ID(), validators) {
 			return 0
 		} else {
+			log.Println("[ERROR] Possibly no validators are online!")
 			log.Fatalf("[ERROR] Unable to sync time with validator set. Please try again!\n")
 		}
 	}
