@@ -2,32 +2,37 @@ package geth
 
 import (
 	"bytes"
+	"encoding/hex"
 	"log"
 
-	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/rlp"
 )
 
-func Keccak256(data []byte) []byte {
-	return crypto.Keccak256(data)
-}
-
-func RlpEncode(data interface{}) []byte {
+// returns hex string for RLP encoded value
+func RlpEncode(data interface{}) (string, error) {
 	var buffer bytes.Buffer
 	if err := rlp.Encode(&buffer, data); err != nil {
-		log.Fatalf("Failed to RLP encode: %v", err)
+		log.Printf("Failed to RLP encode: %s\n", data)
+		return "", err
 	}
-	return buffer.Bytes()
+	hexStr := hex.EncodeToString(buffer.Bytes())
+	return hexStr, nil
 }
 
-func RlpDecode[T any](dataBytes []byte) T {
-	var data T
+// NOTE: encodedData must be a valid hex string (for RLP encoded value)
+func RlpDecode(encodedData string, pdata interface{}) error {
 	var buffer bytes.Buffer
-	buffer.Write(dataBytes)
-	if err := rlp.Decode(&buffer, &data); err != nil {
-		log.Fatalf("Failed to RLP decode: %v", err)
+	encodedBytes, err := hex.DecodeString(encodedData)
+	if err != nil {
+		log.Printf("encodedData is not a valid hex string: %s\n", encodedData)
+		return err
 	}
-	return data
+	buffer.Write(encodedBytes)
+	if err := rlp.Decode(&buffer, pdata); err != nil {
+		log.Printf("Failed to RLP decode: %s\n", encodedData)
+		return err
+	}
+	return nil
 }
 
 // // Example structure to encode
@@ -41,10 +46,11 @@ func RlpDecode[T any](dataBytes []byte) T {
 // 	person := Person{Name: "Alice", Age: 30}
 
 // 	// Encode the data
-// 	dataBytes := RlpEncode(person)
-// 	fmt.Printf("Encoded RLP data: %x\n", dataBytes)
+// 	data, _ := RlpEncode(person)
+// 	fmt.Printf("Encoded RLP data: %s\n", data)
 
 // 	// Decode the data back
-// 	decodedPerson := RlpDecode[Person](dataBytes)
-// 	fmt.Printf("Decoded data: %+v\n", decodedPerson)
+// 	var decodedPerson Person
+// 	RlpDecode(data, &decodedPerson)
+// 	fmt.Printf("Decoded value: %+v\n", decodedPerson)
 // }
