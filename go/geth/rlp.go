@@ -4,8 +4,13 @@ import (
 	"bytes"
 	"log"
 
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/rlp"
 )
+
+func Keccak256(data []byte) []byte {
+	return crypto.Keccak256(data)
+}
 
 func RlpEncode(data interface{}) []byte {
 	var buffer bytes.Buffer
