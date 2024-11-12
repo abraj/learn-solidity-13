@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"reflect"
 	"sort"
 	"time"
 
@@ -23,6 +24,33 @@ func Contains[T IntOrString](slice []T, item T) bool {
 	}
 	return false
 }
+
+func IsNil(value interface{}) bool {
+	v := reflect.ValueOf(value)
+	return !v.IsValid() || v.IsNil()
+}
+
+func AllNil[T any](items []T) bool {
+	for _, item := range items {
+		if !IsNil(item) {
+			return false
+		}
+	}
+	return true
+}
+
+// func AllNil(slice interface{}) bool {
+// 	v := reflect.ValueOf(slice)
+// 	if v.Kind() != reflect.Slice {
+// 		panic("AllNil: provided value is not a slice")
+// 	}
+// 	for i := 0; i < v.Len(); i++ {
+// 		if !v.Index(i).IsNil() {
+// 			return false
+// 		}
+// 	}
+// 	return true
+// }
 
 func IsValidator(peerID peer.ID, validators []peer.ID) bool {
 	includes := false
