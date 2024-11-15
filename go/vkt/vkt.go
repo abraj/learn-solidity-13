@@ -18,13 +18,13 @@ import (
 // Ref: https://chatgpt.com/c/67357fe7-a650-8006-9f51-88c536146755
 
 type VKT struct {
-	root *VKTNode
+	Root *VKTNode
 }
 
 type VKTNode struct {
 	children   []*VKTNode
 	value      string
-	commitment string
+	Commitment string
 }
 
 type Node struct {
@@ -32,8 +32,12 @@ type Node struct {
 	index  uint
 }
 
+func NewVKT() *VKT {
+	return (&VKT{}).init()
+}
+
 func (t *VKT) init() *VKT {
-	t.root = (&VKTNode{}).init()
+	t.Root = (&VKTNode{}).init()
 	return t
 }
 
@@ -44,7 +48,7 @@ func (n *VKTNode) init() *VKTNode {
 }
 
 func (n *VKTNode) updateCommitment() {
-	n.commitment = nodeCommitment(n)
+	n.Commitment = nodeCommitment(n)
 }
 
 // TODO: Use Vector commitment (Pedersen commitment) at each node
@@ -52,7 +56,7 @@ func nodeCommitment(n *VKTNode) string {
 	value := n.value
 	for _, item := range n.children {
 		if item != nil {
-			value += item.commitment
+			value += item.Commitment
 		}
 	}
 	return geth.Keccak256([]byte(value))
@@ -72,7 +76,7 @@ func (t *VKT) Insert(key string, value string) bool {
 
 	path := key
 	stack := []Node{}
-	node := t.root
+	node := t.Root
 
 	for _, nibble := range path {
 		idx, _ := strconv.ParseInt(string(nibble), 16, 32)
@@ -112,7 +116,7 @@ func (t *VKT) Get(key string) string {
 	}
 
 	path := key
-	node := t.root
+	node := t.Root
 
 	for _, nibble := range path {
 		idx, _ := strconv.ParseInt(string(nibble), 16, 32)
@@ -139,7 +143,7 @@ func (t *VKT) Delete(key string) bool {
 	path := key
 
 	stack := []Node{}
-	node := t.root
+	node := t.Root
 
 	for _, nibble := range path {
 		idx, _ := strconv.ParseInt(string(nibble), 16, 32)
@@ -223,26 +227,26 @@ func GetLeafValueEthWei(val float64) string {
 	return valueStr
 }
 
-// TODO: Implementing getLeafValueStr() for strings larger than 32 bytes might need additional data chunks (additional leaf nodes)
+// TODO: Implement getLeafValueStr() for strings larger than 32 bytes might need additional data chunks (additional leaf nodes)
 // func getLeafValueStr(val float64) string {
 // }
 
 // func Demo() {
-// 	vkt := (&VKT{}).init()
+// 	vkt := NewVKT()
 
 // 	addr := "2ED69CD751722FC552bc8C521846d55f6BD8F090"
 
 // 	key1 := GetNonceKey(addr)
 // 	value1 := GetLeafValueInt(31) // nonce: 31
 // 	success := vkt.Insert(key1, value1)
-// 	fmt.Println("inserted:", success, vkt.root.commitment)
+// 	fmt.Println("inserted:", success, vkt.Root.Commitment)
 
 // 	value1 = GetLeafValueInt(32) // nonce: 32
 // 	success = vkt.Update(key1, value1)
-// 	fmt.Println("updated:", success, vkt.root.commitment)
+// 	fmt.Println("updated:", success, vkt.Root.Commitment)
 
 // 	success = vkt.Delete(key1)
-// 	fmt.Println("deleted:", success, vkt.root.commitment)
+// 	fmt.Println("deleted:", success, vkt.Root.Commitment)
 
 // 	value := vkt.Get(key1)
 // 	if value != "" {
@@ -254,13 +258,13 @@ func GetLeafValueEthWei(val float64) string {
 // 	key2 := GetBalanceKey(addr)
 // 	value2 := GetLeafValueEthWei(2.8) // balance: 2.8 * 10^18 wei (2.8 eth)
 // 	success = vkt.Insert(key2, value2)
-// 	fmt.Println("inserted:", success, vkt.root.commitment)
+// 	fmt.Println("inserted:", success, vkt.Root.Commitment)
 
 // 	key3 := GetStorageKey(addr, 0)
 // 	value3 := "hello"
-// 	// TODO: Implementing getLeafValueStr() for strings larger than 32 bytes might need additional data chunks (additional leaf nodes)
+// 	// TODO: Implement getLeafValueStr() for strings larger than 32 bytes might need additional data chunks (additional leaf nodes)
 // 	success = vkt.Insert(key3, value3)
-// 	fmt.Println("inserted:", success, vkt.root.commitment)
+// 	fmt.Println("inserted:", success, vkt.Root.Commitment)
 
-// 	fmt.Println("rootCommitment:", vkt.root.commitment)
+// 	fmt.Println("rootCommitment:", vkt.Root.Commitment)
 // }
