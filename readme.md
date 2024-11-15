@@ -85,3 +85,13 @@ go build -o libp2p-node
 - https://github.com/libp2p/js-libp2p-examples
 - https://github.com/libp2p/js-libp2p-examples/tree/main/examples/js-libp2p-example-peer-and-content-routing
 - https://github.com/libp2p/js-libp2p-examples/tree/main/examples/js-libp2p-example-chat
+
+### Ethereum upgrades: Verkle tree
+
+https://math.mit.edu/research/highschool/primes/materials/2018/Kuszmaul.pdf
+https://vitalik.eth.limo/general/2021/06/18/verkle.html
+https://vitalik.eth.limo/general/2024/10/23/futures4.html
+https://www.youtube.com/watch?v=AJDJvMS8LIE
+https://eips.ethereum.org/EIPS/eip-6800
+https://chatgpt.com/c/673551c2-73c4-8006-9903-66ebd3207211
+https://eips.ethereum.org/EIPS/eip-7612
