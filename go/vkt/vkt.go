@@ -1,14 +1,20 @@
 package vkt
 
 import (
+	"context"
 	"encoding/hex"
 	"fmt"
 	"libp2pdemo/geth"
 	"libp2pdemo/utils"
+	"log"
 	"math"
 	"strconv"
 	"strings"
+
+	ds "github.com/ipfs/go-datastore"
 )
+
+const vktPrefix = "/vkt/node"
 
 // [Incomplete] Verkle tree implementation
 
@@ -22,9 +28,17 @@ type VKT struct {
 }
 
 type VKTNode struct {
-	children   []*VKTNode
-	value      string
 	Commitment string
+	value      string
+	children   []*VKTNode
+	stub       []string
+}
+
+// NOTE: all values exported for serialization
+type VKTNodeObj struct {
+	Commitment string
+	Value      string
+	Stub       []string
 }
 
 type Node struct {
@@ -32,23 +46,126 @@ type Node struct {
 	index  uint
 }
 
-func NewVKT() *VKT {
-	return (&VKT{}).init()
+func NewVKT(rootCommitment string, datastore ds.Datastore) *VKT {
+	return GetVKT(rootCommitment, datastore)
 }
 
-func (t *VKT) init() *VKT {
-	t.Root = (&VKTNode{}).init()
+func GetVKT(rootCommitment string, datastore ds.Datastore) *VKT {
+	return (&VKT{}).init(rootCommitment, datastore)
+}
+
+func (t *VKT) init(rootCommitment string, datastore ds.Datastore) *VKT {
+	n := (&VKTNode{}).init(rootCommitment, datastore)
+	if n == nil {
+		return nil
+	}
+	if rootCommitment == "" {
+		n.updateCommitment(datastore)
+	}
+
+	t.Root = n
 	return t
 }
 
-func (n *VKTNode) init() *VKTNode {
+func (n *VKTNode) init(commitment string, datastore ds.Datastore) *VKTNode {
 	n.children = make([]*VKTNode, 16)
-	n.updateCommitment()
+
+	if commitment != "" {
+		if datastore != nil {
+			vktNodeKey := ds.NewKey(vktPrefix + fmt.Sprintf("/hash/%s", commitment))
+			data, err := datastore.Get(context.Background(), vktNodeKey)
+			if err != nil {
+				log.Printf("Error getting value from datastore for key: %s %v\n", vktNodeKey, err)
+				return nil
+			} else {
+				err := deserializeNode(string(data), n)
+				if err != nil {
+					return nil
+				}
+			}
+		} else {
+			log.Printf("[ERROR] datastore not provided!\n")
+			return nil
+		}
+	}
+
 	return n
 }
 
-func (n *VKTNode) updateCommitment() {
+func (n *VKTNode) PrintNode() {
+	fmt.Println("----------")
+	fmt.Println(n.Commitment)
+	fmt.Println(" value:", n.value)
+	fmt.Println(" children:", n.children)
+	fmt.Println(" stub:", n.stub)
+	fmt.Println("----------")
+}
+
+func (n *VKTNode) getChild(idx int64, datastore ds.Datastore) *VKTNode {
+	if n.children[idx] != nil {
+		return n.children[idx]
+	} else if n.stub != nil && n.stub[idx] != "" {
+		commitment := n.stub[idx]
+		n.stub[idx] = ""
+		if utils.AllEmpty(n.stub) {
+			n.stub = nil
+		}
+		n.children[idx] = (&VKTNode{}).init(commitment, datastore)
+		return n.children[idx]
+	}
+	return n.children[idx]
+}
+
+func (n *VKTNode) updateCommitment(datastore ds.Datastore) {
 	n.Commitment = nodeCommitment(n)
+	key := n.Commitment
+	data := serializeNode(n)
+
+	// save node data (deduped based on node hash/commitment)
+	vktNodeKey := ds.NewKey(vktPrefix + fmt.Sprintf("/hash/%s", key))
+	_, err := datastore.Get(context.Background(), vktNodeKey)
+	if err != nil {
+		// value does not exist for the provided key, so inserting..
+		if err := datastore.Put(context.Background(), vktNodeKey, []byte(data)); err != nil {
+			log.Println(fmt.Sprintf("Error setting data for key: %s", vktNodeKey), err)
+			return
+		}
+	}
+}
+
+func serializeNode(n *VKTNode) string {
+	stub := []string{}
+	for _, v := range n.children {
+		var commitment string
+		if v != nil {
+			commitment = v.Commitment
+		} else {
+			commitment = ""
+		}
+		stub = append(stub, commitment)
+	}
+
+	data := VKTNodeObj{Commitment: n.Commitment, Value: n.value, Stub: stub}
+	encodedData, err := geth.RlpEncode(data)
+	if err != nil {
+		return ""
+	}
+
+	return encodedData
+}
+
+func deserializeNode(encodedData string, n *VKTNode) error {
+	var data VKTNodeObj
+	err := geth.RlpDecode(encodedData, &data)
+	if err != nil {
+		return err
+	}
+
+	n.Commitment = data.Commitment
+	n.value = data.Value
+	n.stub = data.Stub
+
+	return nil
 }
 
 // TODO: Use Vector commitment (Pedersen commitment) at each node
@@ -63,7 +180,7 @@ func nodeCommitment(n *VKTNode) string {
 }
 
 // NOTE: `key` is account address and must be a 32 byte hex string
-func (t *VKT) Insert(key string, value string) bool {
+func (t *VKT) Insert(key string, value string, datastore ds.Datastore) bool {
 	_, err := hex.DecodeString(key)
 	if err != nil {
 		fmt.Println("Error during insert operation! Unable to hex decode key:", key, err)
@@ -80,31 +197,31 @@ func (t *VKT) Insert(key string, value string) bool {
 
 	for _, nibble := range path {
 		idx, _ := strconv.ParseInt(string(nibble), 16, 32)
-		if node.children[idx] == nil {
-			node.children[idx] = (&VKTNode{}).init()
+		if node.getChild(idx, datastore) == nil {
+			node.children[idx] = (&VKTNode{}).init("", nil)
 		}
 		stack = append(stack, Node{parent: node, index: uint(idx)})
-		node = node.children[idx]
+		node = node.getChild(idx, datastore)
 	}
 
 	node.value = value
-	node.updateCommitment()
+	node.updateCommitment(datastore)
 
 	for i := len(stack) - 1; i >= 0; i-- {
 		parent := stack[i].parent
-		parent.updateCommitment()
+		parent.updateCommitment(datastore)
 	}
 
 	return true
 }
 
 // NOTE: `key` is account address and must be 32 byte hex string
-func (t *VKT) Update(key string, value string) bool {
-	return t.Insert(key, value)
+func (t *VKT) Update(key string, value string, datastore ds.Datastore) bool {
+	return t.Insert(key, value, datastore)
 }
 
 // NOTE: `key` is account address and must be 32 byte hex string
-func (t *VKT) Get(key string) string {
+func (t *VKT) Get(key string, datastore ds.Datastore) string {
 	_, err := hex.DecodeString(key)
 	if err != nil {
 		fmt.Println("Error during get operation! Unable to hex decode:", key, err)
@@ -120,17 +237,18 @@ func (t *VKT) Get(key string) string {
 
 	for _, nibble := range path {
 		idx, _ := strconv.ParseInt(string(nibble), 16, 32)
-		if node.children[idx] == nil {
+		n := node.getChild(idx, datastore)
+		if n == nil {
 			return "" // no item exists corresponding to the provided key
 		}
-		node = node.children[idx]
+		node = n
 	}
 
 	return node.value
 }
 
 // NOTE: `key` is account address and must be hex string
-func (t *VKT) Delete(key string) bool {
+func (t *VKT) Delete(key string, datastore ds.Datastore) bool {
 	_, err := hex.DecodeString(key)
 	if err != nil {
 		fmt.Println("Error during delete operation! Unable to hex decode:", key, err)
@@ -147,27 +265,28 @@ func (t *VKT) Delete(key string) bool {
 
 	for _, nibble := range path {
 		idx, _ := strconv.ParseInt(string(nibble), 16, 32)
-		if node.children[idx] == nil {
+		n := node.getChild(idx, datastore)
+		if n == nil {
 			return false // no item exists corresponding to the provided key
 		}
 		stack = append(stack, Node{parent: node, index: uint(idx)})
-		node = node.children[idx]
+		node = n
 	}
 
-	// remove the stored (RLP encoded) value
+	// remove the stored value
 	node.value = ""
-	node.updateCommitment()
+	node.updateCommitment(datastore)
 
 	// prune unnecessary nodes, if any
 	for i := len(stack) - 1; i >= 0; i-- {
 		parent := stack[i].parent
 		idx := stack[i].index
-		child := parent.children[idx]
+		child := parent.getChild(int64(idx), datastore)
 
 		// Check if child has any children or value. If not, prune it
-		if utils.AllNil(child.children) && child.value == "" {
+		if utils.AllNil(child.children) && (child.stub == nil || utils.AllEmpty(child.stub)) && child.value == "" {
 			parent.children[idx] = nil // prune
-			parent.updateCommitment()
+			parent.updateCommitment(datastore)
 		} else {
 			break // stop if we find a non-empty node
 		}
@@ -231,21 +350,21 @@ func GetLeafValueEthWei(val float64) string {
 // func getLeafValueStr(val float64) string {
 // }
 
-// func Demo() {
-// 	vkt := NewVKT()
+// func Demo(datastore ds.Datastore) {
+// 	vkt := NewVKT(datastore)
 
 // 	addr := "2ED69CD751722FC552bc8C521846d55f6BD8F090"
 
 // 	key1 := GetNonceKey(addr)
 // 	value1 := GetLeafValueInt(31) // nonce: 31
-// 	success := vkt.Insert(key1, value1)
+// 	success := vkt.Insert(key1, value1, datastore)
 // 	fmt.Println("inserted:", success, vkt.Root.Commitment)
 
 // 	value1 = GetLeafValueInt(32) // nonce: 32
-// 	success = vkt.Update(key1, value1)
+// 	success = vkt.Update(key1, value1, datastore)
 // 	fmt.Println("updated:", success, vkt.Root.Commitment)
 
-// 	success = vkt.Delete(key1)
+// 	success = vkt.Delete(key1, datastore)
 // 	fmt.Println("deleted:", success, vkt.Root.Commitment)
 
 // 	value := vkt.Get(key1)
@@ -257,13 +376,13 @@ func GetLeafValueEthWei(val float64) string {
 
 // 	key2 := GetBalanceKey(addr)
 // 	value2 := GetLeafValueEthWei(2.8) // balance: 2.8 * 10^18 wei (2.8 eth)
-// 	success = vkt.Insert(key2, value2)
+// 	success = vkt.Insert(key2, value2, datastore)
 // 	fmt.Println("inserted:", success, vkt.Root.Commitment)
 
 // 	key3 := GetStorageKey(addr, 0)
 // 	value3 := "hello"
 // 	// TODO: Implement getLeafValueStr() for strings larger than 32 bytes might need additional data chunks (additional leaf nodes)
-// 	success = vkt.Insert(key3, value3)
+// 	success = vkt.Insert(key3, value3, datastore)
 // 	fmt.Println("inserted:", success, vkt.Root.Commitment)
 
 // 	fmt.Println("rootCommitment:", vkt.Root.Commitment)

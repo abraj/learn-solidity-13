@@ -52,6 +52,15 @@ func AllNil[T any](items []T) bool {
 // 	return true
 // }
 
+func AllEmpty(items []string) bool {
+	for _, item := range items {
+		if item != "" {
+			return false
+		}
+	}
+	return true
+}
+
 func IsValidator(peerID peer.ID, validators []peer.ID) bool {
 	includes := false
 	for _, v := range validators {
