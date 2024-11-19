@@ -3,15 +3,11 @@ package demo
 import (
 	"encoding/hex"
 	"fmt"
-	"libp2pdemo/geth"
-	"libp2pdemo/utils"
 	"libp2pdemo/vkt"
 	"log"
-	"reflect"
 
 	ds "github.com/ipfs/go-datastore"
 	"github.com/libp2p/go-libp2p/core/host"
-	// ssz "github.com/ferranbt/fastssz"
 )
 
 type BeaconState struct {
@@ -20,10 +16,10 @@ type BeaconState struct {
 	//   # current epoch committee
 	//   # next epoch committee
 	// # Finality Checkpoints
-	// RandaoMix
+	// RandaoReveal/RandaoMix
 	// ProtocolInfo
 	//   # Other protocol-specific data
-	ExecutionPayload ExecutionPayload
+	ExecutionPayloadState ExecutionPayloadState
 }
 
 type ValidatorInfo struct {
@@ -36,7 +32,7 @@ type ValidatorInfo struct {
 	// SlashingStatus  []string
 }
 
-type ExecutionPayload struct {
+type ExecutionPayloadState struct {
 	ExecutionStateRoot string
 }
 
@@ -79,20 +75,20 @@ func initValidatorRegistry(node host.Host) []ValidatorInfo {
 	return validatorRegistry
 }
 
-func initExecutionPayload() ExecutionPayload {
+func initExecutionPayloadState() ExecutionPayloadState {
 	executionStateRoot := getExecutionStateRoot()
-	executionPayload := ExecutionPayload{ExecutionStateRoot: executionStateRoot}
-	return executionPayload
+	executionPayloadState := ExecutionPayloadState{ExecutionStateRoot: executionStateRoot}
+	return executionPayloadState
 }
 
 func initBeaconState(node host.Host) *BeaconState {
 	validatorRegistry := initValidatorRegistry(node)
-	executionPayload := initExecutionPayload()
-	if validatorRegistry == nil || executionPayload.ExecutionStateRoot == "" {
+	executionPayloadState := initExecutionPayloadState()
+	if validatorRegistry == nil || executionPayloadState.ExecutionStateRoot == "" {
 		return nil
 	}
 
-	beaconState := BeaconState{ValidatorRegistry: validatorRegistry, ExecutionPayload: executionPayload}
+	beaconState := BeaconState{ValidatorRegistry: validatorRegistry, ExecutionPayloadState: executionPayloadState}
 	return &beaconState
 }
 
@@ -110,23 +106,9 @@ func getBeaconStateRoot() string {
 	}
 	beaconStateValue := *beaconState
 
-	v := reflect.ValueOf(beaconStateValue)
-	// t := v.Type()
+	beaconStateRoot := getMerkleRoot(beaconStateValue)
 
-	container := []string{}
-	for i := 0; i < v.NumField(); i++ {
-		// field := t.Field(i)
-		// fmt.Println(field.Name)
-		value := v.Field(i)
-		encodedValue, err := geth.RlpEncode(value.Interface())
-		if err != nil {
-			encodedValue = ""
-		}
-		container = append(container, encodedValue)
-	}
-
-	merkleHash := utils.MerkleHash(container)
-	return "0x" + merkleHash
+	return beaconStateRoot
 }
 
 func getExecutionStateRoot() string {
@@ -169,6 +151,6 @@ func initExecutionState(datastore ds.Datastore) *vkt.VKT {
 		fmt.Println("Not found!")
 	}
 
-	fmt.Println("state root:", state.Root.Commitment)
+	fmt.Println("[exec] state root:", state.Root.Commitment)
 	return state
 }
