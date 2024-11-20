@@ -12,10 +12,10 @@ import (
 )
 
 type BlockHeader struct {
-	Timestamp     int64  // timestamp for the block
-	BlockNumber   int64  // the slot the block belongs to (block number)
+	Timestamp     uint64 // timestamp for the block
+	BlockNumber   uint64 // the slot the block belongs to (block number)
 	ParentHash    string // Hash of the previous block
-	ProposerIndex int64  // index of the validator (block proposer) in the validator registry
+	ProposerIndex uint64 // index of the validator (block proposer) in the validator registry
 	StateRoot     string // Merkle root representing the state at the time of the block
 	BodyRoot      string // Merkle root representing the block body
 	// Signature   (v, r, s)  // Proposer\'s BLS signature
@@ -71,7 +71,7 @@ func InitBlock(node host.Host, datastore ds.Datastore) {
 	defer timer.Stop()
 
 	timestamp := shared.NetworkTime()
-	blockNumber := int64(slotNumber)
+	blockNumber := slotNumber
 	parentHash := "0x" + hex.EncodeToString(make([]byte, 32))
 	stateRoot := getBeaconStateRoot()
 	bodyRoot := getBlockBodyRoot()
@@ -83,11 +83,11 @@ func InitBlock(node host.Host, datastore ds.Datastore) {
 	validatorRegistry := GetValidatorRegistry()
 
 	isValidator := false
-	var proposerIndex int64
+	var proposerIndex uint64
 	for idx, validatorInfo := range validatorRegistry {
 		if validatorInfo.ID == node.ID().String() {
 			isValidator = true
-			proposerIndex = int64(idx)
+			proposerIndex = uint64(idx)
 		}
 	}
 

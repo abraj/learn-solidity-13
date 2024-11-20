@@ -5,7 +5,7 @@ import "fmt"
 // CustomError defines a new error type
 type CustomError struct {
 	Message string
-	Code    int
+	Code    uint64
 }
 
 // Error method satisfies the error interface

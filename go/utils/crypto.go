@@ -11,7 +11,7 @@ import (
 	"golang.org/x/crypto/sha3"
 )
 
-func RandomHex(bytesLength int) string {
+func RandomHex(bytesLength uint64) string {
 	randBytes := make([]byte, bytesLength)
 	_, err := rand.Read(randBytes)
 	if err != nil {
@@ -45,9 +45,9 @@ func CreateSHA3Hash(dataStr string, saltStrHex string) string {
 }
 
 // pad applies PKCS#7 padding to the input to make its length a multiple of the block size.
-func pad(data []byte, blockSize int) []byte {
-	padding := blockSize - len(data)%blockSize
-	padText := bytes.Repeat([]byte{byte(padding)}, padding)
+func pad(data []byte, blockSize uint64) []byte {
+	padding := blockSize - uint64(len(data))%blockSize
+	padText := bytes.Repeat([]byte{byte(padding)}, int(padding))
 	return append(data, padText...)
 }
 

@@ -7,6 +7,7 @@ import (
 	"libp2pdemo/shared"
 	"libp2pdemo/utils"
 	"log"
+	"math"
 	"strconv"
 	"sync"
 	"time"
@@ -39,7 +40,7 @@ func EvictPeer(node host.Host, peerID peer.ID) {
 	node.Network().ClosePeer(peerID)
 }
 
-func queryTime(node host.Host, peerID peer.ID) (int64, int64) {
+func queryTime(node host.Host, peerID peer.ID) (uint64, uint64) {
 	protocolID := client.ProtocolID()
 
 	t0 := shared.NetworkTime() // record the time when the request was sent
@@ -64,16 +65,16 @@ func queryTime(node host.Host, peerID peer.ID) (int64, int64) {
 			return 0, t0
 		}
 
-		roundTripDelay := (t3 - t0) - (t2 - t1)
+		roundTripDelay := (t3 - t0) - (uint64(t2) - uint64(t1))
 		delay := roundTripDelay / 2
 
-		return t2 + delay, t0
+		return uint64(t2) + delay, t0
 	}
 
 	return 0, t0
 }
 
-func fetchNetworkTimeShift(node host.Host, initialCall bool) int {
+func fetchNetworkTimeShift(node host.Host, initialCall bool) int64 {
 	validators := GetValidatorsList()
 
 	if len(validators) == 0 {
@@ -81,7 +82,7 @@ func fetchNetworkTimeShift(node host.Host, initialCall bool) int {
 	}
 
 	var (
-		result = make(map[string]int)
+		result = make(map[string]int64)
 		mu     sync.Mutex
 		wg     sync.WaitGroup
 	)
@@ -106,10 +107,12 @@ func fetchNetworkTimeShift(node host.Host, initialCall bool) int {
 				return
 			}
 
-			shift := int(timestamp - t0)
-			absDiff := shift
-			if absDiff < 0 {
-				absDiff = -absDiff
+			shift := int64(timestamp - t0)
+			var absDiff uint64
+			if shift < 0 {
+				absDiff = uint64(-shift)
+			} else {
+				absDiff = uint64(shift)
 			}
 
 			if !initialCall && absDiff > 2*shared.MAX_CLOCK_DRIFT {
@@ -137,14 +140,14 @@ func fetchNetworkTimeShift(node host.Host, initialCall bool) int {
 
 	timestamps := []int64{}
 	for _, value := range result {
-		timestamps = append(timestamps, int64(value))
+		timestamps = append(timestamps, value)
 	}
 
 	median := utils.Median(timestamps)
-	timeShiftMsec := int(median)
+	timeShiftMsec := median
 
 	// mostly applicable for "initialCall"
-	if timeShiftMsec > shared.MAX_INITIAL_CLOCK_SYNC {
+	if uint64(math.Abs(float64(timeShiftMsec))) > shared.MAX_INITIAL_CLOCK_SYNC {
 		log.Fatalf("[ERROR] Initial time drift too large: %d\n First, sync time on your system and then retry!\n", timeShiftMsec)
 	}
 

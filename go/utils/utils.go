@@ -9,11 +9,11 @@ import (
 )
 
 type IntOrString interface {
-	~int | ~string
+	~int | ~int64 | ~uint64 | ~string
 }
 
 type IntOrInt64 interface {
-	~int | ~int64
+	~int | ~int64 | ~uint64
 }
 
 func Contains[T IntOrString](slice []T, item T) bool {

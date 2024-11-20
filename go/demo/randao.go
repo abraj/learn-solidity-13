@@ -7,6 +7,7 @@ import (
 	"libp2pdemo/shared"
 	"libp2pdemo/utils"
 	"log"
+	"math"
 	"math/big"
 	"math/rand"
 	"strconv"
@@ -22,49 +23,49 @@ import (
 
 type RandaoPhasePayload struct {
 	From  string `json:"from"`
-	Block int    `json:"block"`
-	Phase int    `json:"phase"`
+	Block uint64 `json:"block"`
+	Phase uint64 `json:"phase"`
 }
 
 type RandaoPhase1Payload struct {
 	From  string `json:"from"`
-	Block int    `json:"block"`
-	Phase int    `json:"phase"`
+	Block uint64 `json:"block"`
+	Phase uint64 `json:"phase"`
 	Hash  string `json:"hash"`
 }
 
 type RandaoPhase3Payload struct {
 	From    string `json:"from"`
-	Block   int    `json:"block"`
-	Phase   int    `json:"phase"`
+	Block   uint64 `json:"block"`
+	Phase   uint64 `json:"phase"`
 	Entropy string `json:"entropy"`
 	Salt    string `json:"salt"`
 }
 
 type RandaoPhase4Payload struct {
 	From  string `json:"from"`
-	Block int    `json:"block"`
-	Phase int    `json:"phase"`
+	Block uint64 `json:"block"`
+	Phase uint64 `json:"phase"`
 	View  string `json:"view"`
 }
 
 type RandaoPhase5Payload struct {
 	From                 string `json:"from"`
-	Block                int    `json:"block"`
-	Phase                int    `json:"phase"`
+	Block                uint64 `json:"block"`
+	Phase                uint64 `json:"phase"`
 	ValidatorsMerkleHash string `json:"validatorsMerkleHash"`
-	Elapsed              int    `json:"elapsed"`
+	Elapsed              uint64 `json:"elapsed"`
 	View                 string `json:"view"`
 }
 
 type RandaoPhase6Payload struct {
 	From   string `json:"from"`
-	Block  int    `json:"block"`
-	Phase  int    `json:"phase"`
+	Block  uint64 `json:"block"`
+	Phase  uint64 `json:"phase"`
 	Seed   string `json:"seed"`   // accumulated entropy from contributions by validators
 	Output string `json:"output"` // output from VDF delay function
-	Delay  int64  `json:"delay"`  // delay in ms
-	Steps  int64  `json:"steps"`  // number of steps for VDF delay function
+	Delay  uint64 `json:"delay"`  // delay in ms
+	Steps  uint64 `json:"steps"`  // number of steps for VDF delay function
 }
 
 type RandaoPhaseData struct {
@@ -94,7 +95,7 @@ type RandaoPhase4Data struct {
 type RandaoPhase5Data struct {
 	From                 string `json:"from"`
 	ValidatorsMerkleHash string `json:"validatorsMerkleHash"`
-	Elapsed              int    `json:"elapsed"`
+	Elapsed              uint64 `json:"elapsed"`
 	View                 string `json:"view"`
 }
 
@@ -102,33 +103,33 @@ type RandaoPhase6Data struct {
 	From       string `json:"from"`
 	Seed       string `json:"seed"`
 	Output     string `json:"output"`
-	Steps      int64  `json:"steps"`
+	Steps      uint64 `json:"steps"`
 	IsVerified bool   `json:"isVerified"`
 }
 
 type RandaoPhaseStatus struct {
 	Entropy        string `json:"entropy"`
 	Salt           string `json:"salt"`
-	PhaseCompleted int    `json:"phase"`
+	PhaseCompleted uint64 `json:"phase"`
 	Timeout        bool   `json:"timeout"`
 }
 
 type RandaoVotes1 struct {
-	Votes      int    `json:"votes"`
+	Votes      uint64 `json:"votes"`
 	VoteMap    string `json:"voteMap"`
 	ElapsedMap string `json:"elapsedMap"`
 }
 
 type RandaoVotes2 struct {
-	Votes        int               `json:"votes"`
-	EntropyVotes map[string]int    `json:"entropyVotes"`
+	Votes        uint64            `json:"votes"`
+	EntropyVotes map[string]uint64 `json:"entropyVotes"`
 	EntropyMap   map[string]string `json:"entropyMap"`
 }
 
 type RandaoConsensusObj struct {
 	InFavor           []string `json:"inFavor"`
 	Against           []string `json:"against"`
-	Elapsed           int      `json:"elapsed"`
+	Elapsed           uint64   `json:"elapsed"`
 	InvalidValidators []string `json:"invalidValidators"`
 	RandValue         string   `json:"randValue"`
 }
@@ -141,7 +142,7 @@ type RandaoHashEntropy struct {
 
 type Channels struct {
 	mutex  *sync.Mutex
-	quorum chan int
+	quorum chan uint64
 }
 
 type Conds struct {
@@ -154,7 +155,7 @@ const randaoPrefix = "/randao/block"
 const RANDAO_START_BOUNDARY = 1000 // 1s mark
 const RANDAO_DEBUG_LOGS = false
 
-func condsFactory(block int, phase int, condsMap map[string]Conds) Conds {
+func condsFactory(block uint64, phase uint64, condsMap map[string]Conds) Conds {
 	key := fmt.Sprintf("/%d/phase%d", block, phase)
 	if condsMap[key].cond == nil {
 		var mu sync.Mutex
@@ -170,14 +171,14 @@ func releaseAllConds(condsMap map[string]Conds) {
 	}
 }
 
-func channelsFactory(block int, phase int, datastore ds.Datastore, channelsMap map[string]Channels, condsMap map[string]Conds, onQuorum func(block int)) Channels {
+func channelsFactory(block uint64, phase uint64, datastore ds.Datastore, channelsMap map[string]Channels, condsMap map[string]Conds, onQuorum func(block uint64)) Channels {
 	key := fmt.Sprintf("/%d/phase%d", block, phase)
 	if channelsMap[key].quorum == nil {
-		timer := time.NewTimer(shared.PHASE_DURATION * time.Millisecond)
+		timer := time.NewTimer(time.Duration(shared.PHASE_DURATION) * time.Millisecond)
 
 		// var mutex sync.Mutex
 		mutex := sync.Mutex{}
-		quorum := make(chan int)
+		quorum := make(chan uint64)
 
 		// mutex not needed (since no parallel goroutines) for `channelsFactory` execution
 		channelsMap[key] = Channels{mutex: &mutex, quorum: quorum}
@@ -250,7 +251,7 @@ func randaoMsgValidator(msg *pubsub.Message) bool {
 		return false
 	}
 
-	if !utils.Contains([]int{1, 2, 3, 4, 5, 6}, payload.Phase) {
+	if !utils.Contains([]uint64{1, 2, 3, 4, 5, 6}, payload.Phase) {
 		log.Printf("Invalid phase value: %d (%d)\n", payload.Phase, payload.Block)
 		return false
 	}
@@ -258,7 +259,7 @@ func randaoMsgValidator(msg *pubsub.Message) bool {
 	return true
 }
 
-func randaoPhase1Payload(node host.Host, blockNumber int, entropy string, salt string) string {
+func randaoPhase1Payload(node host.Host, blockNumber uint64, entropy string, salt string) string {
 	hash := utils.CreateSHA3Hash(entropy, salt)
 
 	from := node.ID().String()
@@ -269,7 +270,7 @@ func randaoPhase1Payload(node host.Host, blockNumber int, entropy string, salt s
 	return payloadStr
 }
 
-func randaoPhase2Payload(node host.Host, blockNumber int) string {
+func randaoPhase2Payload(node host.Host, blockNumber uint64) string {
 	from := node.ID().String()
 	payload := RandaoPhasePayload{From: from, Block: blockNumber, Phase: 2}
 	payloadData, _ := json.Marshal(payload)
@@ -278,7 +279,7 @@ func randaoPhase2Payload(node host.Host, blockNumber int) string {
 	return payloadStr
 }
 
-func randaoPhase3Payload(node host.Host, blockNumber int, datastore ds.Datastore) string {
+func randaoPhase3Payload(node host.Host, blockNumber uint64, datastore ds.Datastore) string {
 	statusObj, err := getRandaoStatusObj(blockNumber, datastore)
 	if err != nil {
 		return ""
@@ -292,7 +293,7 @@ func randaoPhase3Payload(node host.Host, blockNumber int, datastore ds.Datastore
 	return payloadStr
 }
 
-func randaoPhase4Payload(node host.Host, blockNumber int, datastore ds.Datastore) string {
+func randaoPhase4Payload(node host.Host, blockNumber uint64, datastore ds.Datastore) string {
 	prefix := randaoPrefix + fmt.Sprintf("/%d/phase3", blockNumber)
 	_, values, err := QueryWithPrefix(datastore, prefix)
 	if err != nil {
@@ -327,13 +328,13 @@ func randaoPhase4Payload(node host.Host, blockNumber int, datastore ds.Datastore
 	return payloadStr
 }
 
-func randaoPhase5Payload(node host.Host, blockNumber int, datastore ds.Datastore) string {
+func randaoPhase5Payload(node host.Host, blockNumber uint64, datastore ds.Datastore) string {
 	validators, err := getValidatorsFromStore(blockNumber, datastore)
 	if err != nil {
 		return ""
 	}
 
-	voteMap := make(map[string]int, len(validators))
+	voteMap := make(map[string]uint64, len(validators))
 	partisanMap := make(map[string]bool, len(validators))
 	for _, validator := range validators {
 		voteMap[validator.String()] = 0
@@ -427,7 +428,7 @@ func randaoPhase5Payload(node host.Host, blockNumber int, datastore ds.Datastore
 
 		value, ok := voteMap[item]
 		// simple (50%) majority for accepting suggestions from other nodes
-		if ok && value*2 >= len(validators) {
+		if ok && value*2 >= uint64(len(validators)) {
 			mu.Lock()
 			curr, ok2 := partisanMap[item]
 			if ok2 && !curr {
@@ -469,7 +470,7 @@ func randaoPhase5Payload(node host.Host, blockNumber int, datastore ds.Datastore
 	return payloadStr
 }
 
-func randaoPhase6Payload(node host.Host, blockNumber int, datastore ds.Datastore) string {
+func randaoPhase6Payload(node host.Host, blockNumber uint64, datastore ds.Datastore) string {
 	validators, err := getValidatorsFromStore(blockNumber, datastore)
 	if err != nil {
 		return ""
@@ -583,7 +584,7 @@ func randaoPhase6Payload(node host.Host, blockNumber int, datastore ds.Datastore
 	x, _ := new(big.Int).SetString(composedHash, 16)
 	v := vdf.NewVDF()
 	t1 := time.Now()
-	y := v.Delay(t, x) // VDF delay
+	y := v.Delay(int64(t), x) // VDF delay
 	t2 := time.Now()
 
 	if y == nil {
@@ -591,7 +592,7 @@ func randaoPhase6Payload(node host.Host, blockNumber int, datastore ds.Datastore
 		log.Printf("[VDF] Prime used: %v\n", v.GetModulus())
 		return ""
 	} else {
-		if !v.Verify(t, x, y) {
+		if !v.Verify(int64(t), x, y) {
 			log.Printf("[VDF] Unable to verify VDF output! Input (seed) to VDF possibly too large. x: %v y: %v\n", x, y)
 			log.Printf("[VDF] Prime used: %v\n", v.GetModulus())
 			return ""
@@ -599,7 +600,7 @@ func randaoPhase6Payload(node host.Host, blockNumber int, datastore ds.Datastore
 	}
 
 	output := y.Text(16)
-	delay := t2.Sub(t1).Milliseconds()
+	delay := uint64(t2.Sub(t1).Milliseconds())
 
 	from := node.ID().String()
 	payload := RandaoPhase6Payload{From: from, Block: blockNumber, Phase: 6, Seed: composedHash, Output: output, Delay: delay, Steps: t}
@@ -609,7 +610,7 @@ func randaoPhase6Payload(node host.Host, blockNumber int, datastore ds.Datastore
 	return payloadStr
 }
 
-func initBlockData(blockNumber int, datastore ds.Datastore) []peer.ID {
+func initBlockData(blockNumber uint64, datastore ds.Datastore) []peer.ID {
 	validators := GetValidatorsList()
 	validatorsList, err := json.Marshal(validators)
 	if err != nil {
@@ -631,7 +632,7 @@ func initBlockData(blockNumber int, datastore ds.Datastore) []peer.ID {
 		return nil
 	}
 
-	rvotesObjData, _ := json.Marshal(RandaoVotes2{Votes: 0, EntropyVotes: map[string]int{}, EntropyMap: map[string]string{}})
+	rvotesObjData, _ := json.Marshal(RandaoVotes2{Votes: 0, EntropyVotes: map[string]uint64{}, EntropyMap: map[string]string{}})
 	rvotesKey := ds.NewKey(randaoPrefix + fmt.Sprintf("/%d/randao-votes", blockNumber))
 	if err := datastore.Put(context.Background(), rvotesKey, []byte(rvotesObjData)); err != nil {
 		log.Println(fmt.Sprintf("Error setting data for key: %s", rvotesKey), err)
@@ -642,7 +643,7 @@ func initBlockData(blockNumber int, datastore ds.Datastore) []peer.ID {
 }
 
 // phase1: commit phase
-func triggerRandaoPhase1(entropy string, salt string, blockNumber int, data string, topic *pubsub.Topic, datastore ds.Datastore) {
+func triggerRandaoPhase1(entropy string, salt string, blockNumber uint64, data string, topic *pubsub.Topic, datastore ds.Datastore) {
 	// if RANDAO_DEBUG_LOGS {
 	fmt.Println("triggerRandaoPhase1..", blockNumber)
 	// }
@@ -683,7 +684,7 @@ func triggerRandaoPhase1(entropy string, salt string, blockNumber int, data stri
 }
 
 // phase2: transition (commit-close) phase
-func triggerRandaoPhase2(block int, node host.Host, topic *pubsub.Topic) {
+func triggerRandaoPhase2(block uint64, node host.Host, topic *pubsub.Topic) {
 	if RANDAO_DEBUG_LOGS {
 		fmt.Println("triggerRandaoPhase2..", block)
 	}
@@ -701,7 +702,7 @@ func triggerRandaoPhase2(block int, node host.Host, topic *pubsub.Topic) {
 }
 
 // phase3: reveal phase
-func triggerRandaoPhase3(block int, node host.Host, topic *pubsub.Topic, datastore ds.Datastore) {
+func triggerRandaoPhase3(block uint64, node host.Host, topic *pubsub.Topic, datastore ds.Datastore) {
 	if RANDAO_DEBUG_LOGS {
 		fmt.Println("triggerRandaoPhase3..", block)
 	}
@@ -719,7 +720,7 @@ func triggerRandaoPhase3(block int, node host.Host, topic *pubsub.Topic, datasto
 }
 
 // phase4: partial-tally phase
-func triggerRandaoPhase4(block int, node host.Host, topic *pubsub.Topic, datastore ds.Datastore) {
+func triggerRandaoPhase4(block uint64, node host.Host, topic *pubsub.Topic, datastore ds.Datastore) {
 	if RANDAO_DEBUG_LOGS {
 		fmt.Println("triggerRandaoPhase4..", block)
 	}
@@ -737,7 +738,7 @@ func triggerRandaoPhase4(block int, node host.Host, topic *pubsub.Topic, datasto
 }
 
 // phase5: full-tally phase
-func triggerRandaoPhase5(block int, node host.Host, topic *pubsub.Topic, datastore ds.Datastore) {
+func triggerRandaoPhase5(block uint64, node host.Host, topic *pubsub.Topic, datastore ds.Datastore) {
 	if RANDAO_DEBUG_LOGS {
 		fmt.Println("triggerRandaoPhase5..", block)
 	}
@@ -755,7 +756,7 @@ func triggerRandaoPhase5(block int, node host.Host, topic *pubsub.Topic, datasto
 }
 
 // phase6: VDF delay phase
-func triggerRandaoPhase6(block int, node host.Host, topic *pubsub.Topic, datastore ds.Datastore) {
+func triggerRandaoPhase6(block uint64, node host.Host, topic *pubsub.Topic, datastore ds.Datastore) {
 	if RANDAO_DEBUG_LOGS {
 		fmt.Println("triggerRandaoPhase6..", block)
 	}
@@ -772,7 +773,7 @@ func triggerRandaoPhase6(block int, node host.Host, topic *pubsub.Topic, datasto
 	}
 }
 
-func consumeRandaoMix(block int, datastore ds.Datastore) {
+func consumeRandaoMix(block uint64, datastore ds.Datastore) {
 	if RANDAO_DEBUG_LOGS {
 		fmt.Println("consumeRandaoMix..", block)
 	}
@@ -791,7 +792,7 @@ func consumeRandaoMix(block int, datastore ds.Datastore) {
 	// }
 }
 
-func getRandaoStatusObj(block int, datastore ds.Datastore) (RandaoPhaseStatus, error) {
+func getRandaoStatusObj(block uint64, datastore ds.Datastore) (RandaoPhaseStatus, error) {
 	statusKey := ds.NewKey(randaoPrefix + fmt.Sprintf("/%d/status", block))
 	statusData, err := datastore.Get(context.Background(), statusKey)
 	if err != nil {
@@ -813,7 +814,7 @@ func getRandaoStatusObj(block int, datastore ds.Datastore) (RandaoPhaseStatus, e
 	return statusObj, nil
 }
 
-func setRandaoStatusObj(statusObj RandaoPhaseStatus, block int, datastore ds.Datastore) error {
+func setRandaoStatusObj(statusObj RandaoPhaseStatus, block uint64, datastore ds.Datastore) error {
 	statusData, err := json.Marshal(statusObj)
 	if err != nil {
 		log.Println("Error marshalling status data:", err)
@@ -829,7 +830,7 @@ func setRandaoStatusObj(statusObj RandaoPhaseStatus, block int, datastore ds.Dat
 	return nil
 }
 
-func getValidatorsFromStore(block int, datastore ds.Datastore) ([]peer.ID, error) {
+func getValidatorsFromStore(block uint64, datastore ds.Datastore) ([]peer.ID, error) {
 	validatorsKey := ds.NewKey(randaoPrefix + fmt.Sprintf("/%d/validators", block))
 	validatorsList, err := datastore.Get(context.Background(), validatorsKey)
 	if err != nil {
@@ -1381,7 +1382,7 @@ func consumeRandaoPhase5(node host.Host, payload RandaoPhase5Payload, from peer.
 		log.Printf("Too many invalid validators: %d (%d)\n", len(invalidValidators), len(validators))
 		return
 	}
-	validValidatorsLen := len(validators) - len(invalidValidators)
+	validValidatorsLen := uint64(len(validators) - len(invalidValidators))
 
 	votesKey := ds.NewKey(randaoPrefix + fmt.Sprintf("/%d/votes", payload.Block))
 	votesData, err := datastore.Get(context.Background(), votesKey)
@@ -1397,14 +1398,14 @@ func consumeRandaoPhase5(node host.Host, payload RandaoPhase5Payload, from peer.
 		return
 	}
 
-	voteMap := make(map[string]int)
+	voteMap := make(map[string]uint64)
 	err = json.Unmarshal([]byte(votesObj.VoteMap), &voteMap)
 	if err != nil {
 		log.Printf("[ERROR] Unable to unmarshal voteMap data: %s\n", votesObj.VoteMap)
 		return
 	}
 
-	elapsedMap := make(map[string]int)
+	elapsedMap := make(map[string]uint64)
 	err = json.Unmarshal([]byte(votesObj.ElapsedMap), &elapsedMap)
 	if err != nil {
 		log.Printf("[ERROR] Unable to unmarshal elapsedMap data: %s\n", votesObj.ElapsedMap)
@@ -1470,7 +1471,7 @@ func consumeRandaoPhase5(node host.Host, payload RandaoPhase5Payload, from peer.
 	consensus := true
 	inFavorList := []string{}
 	againstList := []string{}
-	elapsedList := []int{}
+	elapsedList := []uint64{}
 	for _, validator := range validators {
 		item := validator.String()
 		if utils.Contains(invalidValidators, item) {
@@ -1492,10 +1493,10 @@ func consumeRandaoPhase5(node host.Host, payload RandaoPhase5Payload, from peer.
 		break
 	}
 
-	retVal := -1
+	var retVal int64 = -1
 	if consensus {
 		// consensus
-		retVal = payload.Block
+		retVal = int64(payload.Block)
 
 		// save consensus data
 		elapsed := utils.Median(elapsedList)
@@ -1526,7 +1527,7 @@ func consumeRandaoPhase5(node host.Host, payload RandaoPhase5Payload, from peer.
 		}
 
 		// close phase5
-		channels.quorum <- retVal
+		channels.quorum <- uint64(retVal)
 	}
 }
 
@@ -1556,7 +1557,7 @@ func consumeRandaoPhase6(node host.Host, payload RandaoPhase6Payload, from peer.
 	}
 
 	invalidValidators := consensusObj.InvalidValidators
-	validValidatorsLen := len(validators) - len(invalidValidators)
+	validValidatorsLen := uint64(len(validators) - len(invalidValidators))
 
 	if utils.Contains(invalidValidators, from.String()) {
 		log.Printf("[WARN] Invalid 'validators list' at this validator: %s\n", from)
@@ -1604,7 +1605,7 @@ func consumeRandaoPhase6(node host.Host, payload RandaoPhase6Payload, from peer.
 	x, _ := new(big.Int).SetString(payload.Seed, 16)
 	y, _ := new(big.Int).SetString(payload.Output, 16)
 	v := vdf.NewVDF()
-	isVerified := v.Verify(t, x, y)
+	isVerified := v.Verify(int64(t), x, y)
 
 	data := RandaoPhase6Data{From: payload.From, Seed: payload.Seed, Output: payload.Output, Steps: payload.Steps, IsVerified: isVerified}
 	p6Data, err := json.Marshal(data)
@@ -1654,7 +1655,7 @@ func consumeRandaoPhase6(node host.Host, payload RandaoPhase6Payload, from peer.
 		return
 	}
 
-	rKey := utils.CreateSHA3Hash(payload.Seed+payload.Output+strconv.FormatInt(payload.Steps, 10), "")
+	rKey := utils.CreateSHA3Hash(payload.Seed+payload.Output+strconv.FormatInt(int64(payload.Steps), 10), "")
 	eVotes, ok := rvotesObj.EntropyVotes[rKey]
 	if ok {
 		rvotesObj.EntropyVotes[rKey] = eVotes + 1
@@ -1692,10 +1693,10 @@ func consumeRandaoPhase6(node host.Host, payload RandaoPhase6Payload, from peer.
 		}
 	}
 
-	retVal := -1
+	var retVal int64 = -1
 	if consensus {
 		// consensus
-		retVal = payload.Block
+		retVal = int64(payload.Block)
 
 		// save consensus data (randao mix)
 		consensusObj.RandValue = consensusRandValue
@@ -1725,7 +1726,7 @@ func consumeRandaoPhase6(node host.Host, payload RandaoPhase6Payload, from peer.
 		}
 
 		// close phase6
-		channels.quorum <- retVal
+		channels.quorum <- uint64(retVal)
 	}
 }
 
@@ -1764,7 +1765,7 @@ func listenRandaoTopic(node host.Host, topic *pubsub.Topic, datastore ds.Datasto
 			}
 			ongoingPhase := statusObj.PhaseCompleted + 1
 			maxAllowedPhase := ongoingPhase + 1
-			consensusPhase := 5 // consensus (5), randao mix (6)
+			var consensusPhase uint64 = 5 // consensus (5), randao mix (6)
 
 			if !isValidator && _payload.Phase < consensusPhase {
 				// only allow last (consensus) phase message for non-validators
@@ -1783,7 +1784,7 @@ func listenRandaoTopic(node host.Host, topic *pubsub.Topic, datastore ds.Datasto
 				}
 
 				// keep it outside goroutine for thread-safety of map
-				channels := channelsFactory(payload.Block, payload.Phase, datastore, channelsMap, condsMap, func(block int) {
+				channels := channelsFactory(payload.Block, payload.Phase, datastore, channelsMap, condsMap, func(block uint64) {
 					triggerRandaoPhase2(block, node, topic)
 				})
 
@@ -1794,7 +1795,7 @@ func listenRandaoTopic(node host.Host, topic *pubsub.Topic, datastore ds.Datasto
 				payload := _payload
 
 				// keep it outside goroutine for thread-safety of map
-				channels := channelsFactory(payload.Block, payload.Phase, datastore, channelsMap, condsMap, func(block int) {
+				channels := channelsFactory(payload.Block, payload.Phase, datastore, channelsMap, condsMap, func(block uint64) {
 					triggerRandaoPhase3(block, node, topic, datastore)
 				})
 
@@ -1811,7 +1812,7 @@ func listenRandaoTopic(node host.Host, topic *pubsub.Topic, datastore ds.Datasto
 				}
 
 				// keep it outside goroutine for thread-safety of map
-				channels := channelsFactory(payload.Block, payload.Phase, datastore, channelsMap, condsMap, func(block int) {
+				channels := channelsFactory(payload.Block, payload.Phase, datastore, channelsMap, condsMap, func(block uint64) {
 					triggerRandaoPhase4(block, node, topic, datastore)
 				})
 
@@ -1828,7 +1829,7 @@ func listenRandaoTopic(node host.Host, topic *pubsub.Topic, datastore ds.Datasto
 				}
 
 				// keep it outside goroutine for thread-safety of map
-				channels := channelsFactory(payload.Block, payload.Phase, datastore, channelsMap, condsMap, func(block int) {
+				channels := channelsFactory(payload.Block, payload.Phase, datastore, channelsMap, condsMap, func(block uint64) {
 					triggerRandaoPhase5(block, node, topic, datastore)
 				})
 
@@ -1845,7 +1846,7 @@ func listenRandaoTopic(node host.Host, topic *pubsub.Topic, datastore ds.Datasto
 				}
 
 				// keep it outside goroutine for thread-safety of map
-				channels := channelsFactory(payload.Block, payload.Phase, datastore, channelsMap, condsMap, func(block int) {
+				channels := channelsFactory(payload.Block, payload.Phase, datastore, channelsMap, condsMap, func(block uint64) {
 					if isValidator {
 						triggerRandaoPhase6(block, node, topic, datastore)
 					}
@@ -1864,7 +1865,7 @@ func listenRandaoTopic(node host.Host, topic *pubsub.Topic, datastore ds.Datasto
 				}
 
 				// keep it outside goroutine for thread-safety of map
-				channels := channelsFactory(payload.Block, payload.Phase, datastore, channelsMap, condsMap, func(block int) {
+				channels := channelsFactory(payload.Block, payload.Phase, datastore, channelsMap, condsMap, func(block uint64) {
 					consumeRandaoMix(block, datastore)
 				})
 
@@ -1913,18 +1914,18 @@ func InitRandaoLoop(node host.Host, ps *pubsub.PubSub, datastore ds.Datastore) {
 		time.Sleep(time.Duration(delay) * time.Millisecond)
 
 		for {
-			midpointDelay := shared.SLOT_DURATION / 2 // drift to slot midpoint
-			randomDelay := int(rand.Float64() * 1000) // 0-1s
+			midpointDelay := shared.SLOT_DURATION / 2    // drift to slot midpoint
+			randomDelay := uint64(rand.Float64() * 1000) // 0-1s
 			delay := midpointDelay + randomDelay
 			time.Sleep(time.Duration(delay) * time.Millisecond)
 
 			nextBlockNumber, waitTimeMsec := shared.NextBlockInfo(initialCall)
 			if nextBlockNumber > 0 {
-				ticker := time.After(time.Duration(waitTimeMsec) * time.Millisecond)
+				timer := time.After(time.Duration(waitTimeMsec) * time.Millisecond)
 				entropy := utils.RandomHex(32)
 				salt := utils.RandomHex(16)
 				data := randaoPhase1Payload(node, nextBlockNumber, entropy, salt)
-				<-ticker // wait for next slot start
+				<-timer // wait for next slot start
 
 				// Move to randao start boundary (1s mark)
 				// NOTE: to change or disable start boundary, do not comment the following sleep statement.
@@ -1932,7 +1933,7 @@ func InitRandaoLoop(node host.Host, ps *pubsub.PubSub, datastore ds.Datastore) {
 				time.Sleep(RANDAO_START_BOUNDARY * time.Millisecond)
 
 				timeShiftMsec := shared.NetworkTimeShift()
-				if timeShiftMsec > shared.MAX_CLOCK_DRIFT {
+				if uint64(math.Abs(float64(timeShiftMsec))) > shared.MAX_CLOCK_DRIFT {
 					log.Printf("[WARN] Current time drift too large: %d\n", timeShiftMsec)
 					// fmt.Printf("Skipping new phase trigger.. [block %d]\n", nextBlockNumber)
 					// continue

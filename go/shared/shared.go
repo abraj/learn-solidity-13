@@ -6,47 +6,47 @@ import (
 	"time"
 )
 
-const EPOCH_BASE_MS = 1640995200000 // 1 Jan 2022 00:00:00 UTC
-const SLOT_DURATION = 5000          // 5 sec
-const PHASE_DURATION = 2000         // 2 sec
-const MAX_INITIAL_CLOCK_SYNC = 1000 // 1 sec
-const MAX_CLOCK_DRIFT = 100         // 100 ms
-const MAX_LAG = 50                  // 50 ms
+const EPOCH_BASE_MS uint64 = 1640995200000 // 1 Jan 2022 00:00:00 UTC
+const SLOT_DURATION uint64 = 5000          // 5 sec
+const PHASE_DURATION uint64 = 2000         // 2 sec
+const MAX_INITIAL_CLOCK_SYNC uint64 = 1000 // 1 sec
+const MAX_CLOCK_DRIFT uint64 = 100         // 100 ms
+const MAX_LAG uint64 = 50                  // 50 ms
 
-var networkTimeShift int
-var latestBlockNumber int = -1
+var networkTimeShift int64
+var latestBlockNumber int64 = -1
 
-func SetNetworkTimeShift(timeShiftMsec int) {
-	alpha := 0.2   // smoothing factor
-	threshold := 5 // Hysteresis correction threshold
+func SetNetworkTimeShift(timeShiftMsec int64) {
+	var alpha float64 = 0.2    // smoothing factor
+	const threshold uint64 = 5 // Hysteresis correction threshold
 
-	if timeShiftMsec < 2*threshold {
+	if uint64(math.Abs(float64(timeShiftMsec))) < 2*threshold {
 		return
 	}
 
-	if timeShiftMsec > MAX_CLOCK_DRIFT {
+	if timeShiftMsec > int64(MAX_CLOCK_DRIFT) {
 		log.Printf("[WARN] Time drift too large: %d\n", timeShiftMsec)
 		alpha = 0.1
 	}
 
 	newShift := alpha*float64(timeShiftMsec) + (1-alpha)*float64(networkTimeShift)
-	diff := int(math.Abs(float64(networkTimeShift) - newShift))
+	diff := uint64(math.Abs(float64(networkTimeShift) - newShift))
 	if diff >= threshold {
-		networkTimeShift = int(math.Round(newShift))
+		networkTimeShift = int64(math.Round(newShift))
 	}
 }
 
 // get (local) network time in msec
-func NetworkTime() int64 {
-	return time.Now().UnixMilli() + int64(networkTimeShift)
+func NetworkTime() uint64 {
+	return uint64(time.Now().UnixMilli() + int64(networkTimeShift))
 }
 
 // get (local) network time shift in msec
-func NetworkTimeShift() int {
+func NetworkTimeShift() int64 {
 	return networkTimeShift
 }
 
-func SlotInfo() (slotNumber int, timeLeftMsec int) {
+func SlotInfo() (slotNumber uint64, timeLeftMsec uint64) {
 	networkTime := NetworkTime()
 	diff := networkTime - EPOCH_BASE_MS
 
@@ -54,25 +54,25 @@ func SlotInfo() (slotNumber int, timeLeftMsec int) {
 	slotNum := diff / SLOT_DURATION
 	timeLeft := (slotNum+1)*SLOT_DURATION - diff
 
-	return int(slotNum), int(timeLeft)
+	return slotNum, timeLeft
 }
 
-func GetLatestBlockNumber() int {
+func GetLatestBlockNumber() uint64 {
 	if latestBlockNumber < 0 {
 		log.Fatalf("[PANIC] latestBlockNumber not yet set: %d\n", latestBlockNumber)
 	}
-	return latestBlockNumber
+	return uint64(latestBlockNumber)
 }
 
-func SetLatestBlockNumber(newBlockNumber int) {
-	if newBlockNumber > latestBlockNumber {
-		latestBlockNumber = newBlockNumber
+func SetLatestBlockNumber(newBlockNumber uint64) {
+	if int64(newBlockNumber) > latestBlockNumber {
+		latestBlockNumber = int64(newBlockNumber)
 	}
 }
 
-func NextBlockInfo(initialCall bool) (int, int) {
-	var nextBlockNumber int
-	var waitTimeMsec int
+func NextBlockInfo(initialCall bool) (uint64, uint64) {
+	var nextBlockNumber uint64
+	var waitTimeMsec uint64
 
 	slotNumber, timeLeftMsec := SlotInfo()
 	timeElapsed := SLOT_DURATION - timeLeftMsec
