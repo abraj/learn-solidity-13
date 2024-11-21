@@ -4,6 +4,8 @@ import (
 	"log"
 	"math"
 	"time"
+
+	"github.com/libp2p/go-libp2p/core/crypto"
 )
 
 const EPOCH_BASE_MS uint64 = 1640995200000 // 1 Jan 2022 00:00:00 UTC
@@ -15,6 +17,7 @@ const MAX_LAG uint64 = 50                  // 50 ms
 
 var networkTimeShift int64
 var latestBlockNumber int64 = -1
+var privateKey crypto.PrivKey
 
 func SetNetworkTimeShift(timeShiftMsec int64) {
 	var alpha float64 = 0.2    // smoothing factor
@@ -94,4 +97,12 @@ func NextBlockInfo(initialCall bool) (uint64, uint64) {
 	}
 
 	return nextBlockNumber, waitTimeMsec
+}
+
+func SetPrivateKey(privKey crypto.PrivKey) {
+	privateKey = privKey
+}
+
+func GetPrivateKey() crypto.PrivKey {
+	return privateKey
 }

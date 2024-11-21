@@ -12,7 +12,7 @@ import (
 func RlpEncode(data interface{}) (string, error) {
 	var buffer bytes.Buffer
 	if err := rlp.Encode(&buffer, data); err != nil {
-		log.Printf("Failed to RLP encode: %s\n", data)
+		log.Printf("Failed to RLP encode: %+v\n", data)
 		return "", err
 	}
 	hexStr := hex.EncodeToString(buffer.Bytes())

@@ -1,12 +1,14 @@
 package demo
 
 import (
+	"bytes"
 	"encoding/hex"
 	"fmt"
 	"libp2pdemo/shared"
 	"log"
 	"time"
 
+	"github.com/ethereum/go-ethereum/rlp"
 	ds "github.com/ipfs/go-datastore"
 	"github.com/libp2p/go-libp2p/core/host"
 )
@@ -18,8 +20,17 @@ type BlockHeader struct {
 	ProposerIndex uint64 // index of the validator (block proposer) in the validator registry
 	StateRoot     string // Merkle root representing the state at the time of the block
 	BodyRoot      string // Merkle root representing the block body
-	// Signature   (v, r, s)  // Proposer\'s BLS signature
+	Signature     string // Proposer's signature (ideally BLS)
 	// ExecutionPayloadHeader ExecutionPayloadHeader
+}
+
+type BlockHeaderData struct {
+	Timestamp     uint64
+	BlockNumber   uint64
+	ParentHash    string
+	ProposerIndex uint64
+	StateRoot     string
+	BodyRoot      string
 }
 
 type BlockBody struct {
@@ -60,7 +71,7 @@ type TransactionData struct {
 	// 	gas: 21000,                                // Gas used by the transaction
 	// 	gas_price: "1000000000",                   // Gas price (in wei)
 	// 	nonce: 1                                   // Nonce
-	// 	Signature: "v, r, s"                       // The sender\'s signature
+	// 	Signature: "v, r, s"                       // The sender's signature (ECDSA)
 }
 
 func InitBlock(node host.Host, datastore ds.Datastore) {
@@ -96,7 +107,56 @@ func InitBlock(node host.Host, datastore ds.Datastore) {
 		return
 	}
 
-	header := BlockHeader{Timestamp: timestamp, BlockNumber: blockNumber, ParentHash: parentHash, ProposerIndex: proposerIndex, StateRoot: stateRoot, BodyRoot: bodyRoot}
+	privKey := shared.GetPrivateKey()
+	if privKey == nil {
+		log.Fatalf("[ERROR] private key should be set by now!\n")
+	}
+
+	headerData := BlockHeaderData{
+		BlockNumber: 123,
+
+		// Timestamp:     timestamp,
+		// BlockNumber: blockNumber,
+		// ParentHash:    parentHash,
+		// ProposerIndex: proposerIndex,
+		// StateRoot:     stateRoot,
+		// BodyRoot:      bodyRoot,
+	}
+
+	fmt.Println("1..")
+	// data, err := geth.RlpEncode(headerData)
+	// if err != nil {
+	// 	return
+	// }
+
+	var buffer bytes.Buffer
+	err := rlp.Encode(&buffer, headerData)
+	if err != nil {
+		log.Printf("Failed to RLP encode: %+v\n", headerData)
+		return
+	}
+	data := hex.EncodeToString(buffer.Bytes())
+
+	fmt.Println("2..")
+
+	// TODO: ideally BLS signature should be used (using ECDSA signature for now)
+	signBytes, err := privKey.Sign([]byte(data))
+	if err != nil {
+		log.Printf("[ERROR] Unable to create signature!\n")
+		return
+	}
+	sign := "0x" + hex.EncodeToString(signBytes)
+
+	header := BlockHeader{
+		Timestamp:     timestamp,
+		BlockNumber:   blockNumber,
+		ParentHash:    parentHash,
+		ProposerIndex: proposerIndex,
+		StateRoot:     stateRoot,
+		BodyRoot:      bodyRoot,
+		Signature:     sign,
+	}
+	// proposer := validatorRegistry[proposerIndex]
 
 	<-timer.C
 	fmt.Println("----")

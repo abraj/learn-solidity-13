@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"libp2pdemo/baadal/client"
+	"libp2pdemo/shared"
 	"libp2pdemo/utils"
 	"log"
 	"os"
@@ -32,6 +33,8 @@ func Node1() {
 	ctx := context.Background()
 
 	// ------------------
+
+	shared.SetPrivateKey(privateKey)
 
 	// start a libp2p node
 	node, err := libp2p.New(
@@ -73,7 +76,7 @@ func Node1() {
 	pubsubOpts := []pubsub.Option{
 		pubsub.WithMessageSignaturePolicy(pubsub.StrictSign),
 	}
-	ps, err := pubsub.NewGossipSub(ctx, node, pubsubOpts...)
+	_, err = pubsub.NewGossipSub(ctx, node, pubsubOpts...)
 	if err != nil {
 		log.Fatalf("Failed to create GossipSub: %v", err)
 	}
@@ -88,7 +91,11 @@ func Node1() {
 
 	AdjustNetworkTime(node, true)
 
-	InitRandaoLoop(node, ps, datastore)
+	go func() {
+		InitState(node, datastore)
+		InitBlock(node, datastore)
+	}()
+	// InitRandaoLoop(node, ps, datastore)
 
 	// ------------------
 

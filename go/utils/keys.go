@@ -27,6 +27,7 @@ func ecdsaKeyToLibp2p(ecdsaKey *ecdsa.PrivateKey) crypto.PrivKey {
 	if err != nil {
 		panic(err)
 	}
+
 	return libp2pPrivKey
 }
 
