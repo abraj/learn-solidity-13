@@ -76,7 +76,7 @@ func Node1() {
 	pubsubOpts := []pubsub.Option{
 		pubsub.WithMessageSignaturePolicy(pubsub.StrictSign),
 	}
-	_, err = pubsub.NewGossipSub(ctx, node, pubsubOpts...)
+	ps, err := pubsub.NewGossipSub(ctx, node, pubsubOpts...)
 	if err != nil {
 		log.Fatalf("Failed to create GossipSub: %v", err)
 	}
@@ -92,10 +92,10 @@ func Node1() {
 	AdjustNetworkTime(node, true)
 
 	go func() {
-		InitState(node, datastore)
-		InitBlock(node, datastore)
+		// InitState(node, datastore)
+		// InitBlock(node, datastore)
 	}()
-	// InitRandaoLoop(node, ps, datastore)
+	InitRandaoLoop(node, ps, datastore)
 
 	// ------------------
 

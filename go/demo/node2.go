@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"libp2pdemo/baadal/client"
+	"libp2pdemo/shared"
 	"libp2pdemo/utils"
 	"log"
 	"os"
@@ -40,6 +41,8 @@ func Node2() {
 	ctx := context.Background()
 
 	// ------------------
+
+	shared.SetPrivateKey(privateKey)
 
 	// start a libp2p node
 	node, err := libp2p.New(
@@ -95,6 +98,10 @@ func Node2() {
 
 	AdjustNetworkTime(node, true)
 
+	go func() {
+		// InitState(node, datastore)
+		// InitBlock(node, datastore)
+	}()
 	InitRandaoLoop(node, ps, datastore)
 
 	// ------------------
