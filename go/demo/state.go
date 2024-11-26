@@ -25,7 +25,7 @@ type BeaconState struct {
 type ValidatorInfo struct {
 	ID        string
 	PublicKey string
-	// StakedBalanace  int64
+	// StakedBalance  int64
 	// Status          string // (active, exited, slashed, etc.)
 	// ActivationEpoch int64
 	// ExitEpoch       int64

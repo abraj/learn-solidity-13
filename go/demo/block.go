@@ -1,14 +1,13 @@
 package demo
 
 import (
-	"bytes"
 	"encoding/hex"
 	"fmt"
+	"libp2pdemo/geth"
 	"libp2pdemo/shared"
 	"log"
 	"time"
 
-	"github.com/ethereum/go-ethereum/rlp"
 	ds "github.com/ipfs/go-datastore"
 	"github.com/libp2p/go-libp2p/core/host"
 )
@@ -83,7 +82,7 @@ func InitBlock(node host.Host, datastore ds.Datastore) {
 
 	timestamp := shared.NetworkTime()
 	blockNumber := slotNumber
-	parentHash := "0x" + hex.EncodeToString(make([]byte, 32))
+	parentHash := "0x" + hex.EncodeToString(make([]byte, 32)) // parentHash for genesis block
 	stateRoot := getBeaconStateRoot()
 	bodyRoot := getBlockBodyRoot()
 
@@ -113,31 +112,18 @@ func InitBlock(node host.Host, datastore ds.Datastore) {
 	}
 
 	headerData := BlockHeaderData{
-		BlockNumber: 123,
-
-		// Timestamp:     timestamp,
-		// BlockNumber: blockNumber,
-		// ParentHash:    parentHash,
-		// ProposerIndex: proposerIndex,
-		// StateRoot:     stateRoot,
-		// BodyRoot:      bodyRoot,
+		Timestamp:     timestamp,
+		BlockNumber:   blockNumber,
+		ParentHash:    parentHash,
+		ProposerIndex: proposerIndex,
+		StateRoot:     stateRoot,
+		BodyRoot:      bodyRoot,
 	}
 
-	fmt.Println("1..")
-	// data, err := geth.RlpEncode(headerData)
-	// if err != nil {
-	// 	return
-	// }
-
-	var buffer bytes.Buffer
-	err := rlp.Encode(&buffer, headerData)
+	data, err := geth.RlpEncode(headerData)
 	if err != nil {
-		log.Printf("Failed to RLP encode: %+v\n", headerData)
 		return
 	}
-	data := hex.EncodeToString(buffer.Bytes())
-
-	fmt.Println("2..")
 
 	// TODO: ideally BLS signature should be used (using ECDSA signature for now)
 	signBytes, err := privKey.Sign([]byte(data))
